@@ -31,9 +31,11 @@ New-Item -ItemType Directory -Force $bin | Out-Null
 [IO.File]::WriteAllText("$bin\maestro.cmd", "@`"%~dp0..\node.exe`" `"%~dp0..\src\cli.ts`" %*`r`n")
 [IO.File]::WriteAllText("$bin\maestro", "#!/bin/sh`nexec `"`$(dirname `"`$0`")/../node.exe`" `"`$(dirname `"`$0`")/../src/cli.ts`" `"`$@`"`n")
 
+# First in PATH, so a stale `maestro` elsewhere (e.g. an old npm link) can't shadow it.
 $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-if (($userPath -split ';') -notcontains $bin) {
-  [Environment]::SetEnvironmentVariable('Path', (@($userPath, $bin) | Where-Object { $_ }) -join ';', 'User')
+if (($userPath -split ';')[0] -ne $bin) {
+  $rest = $userPath -split ';' | Where-Object { $_ -and $_ -ne $bin }
+  [Environment]::SetEnvironmentVariable('Path', (@($bin) + $rest) -join ';', 'User')
 }
-if (($env:Path -split ';') -notcontains $bin) { $env:Path += ";$bin" }
+$env:Path = (@($bin) + ($env:Path -split ';' | Where-Object { $_ -and $_ -ne $bin })) -join ';'
 Write-Host "Maestro installed in $dir. Run: maestro"
