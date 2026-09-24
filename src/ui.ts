@@ -4,7 +4,7 @@ import path from 'node:path';
 import React, { useEffect, useState } from 'react';
 import { Box, Text, render, useApp, useInput, useWindowSize } from 'ink';
 import { knownDirs, liveSessions, samePath, type Agent, type Session } from './disk.ts';
-import { attach, killAll, managed, onManagedExit, send, spawn, type Managed } from './pty.ts';
+import { attach, inkInput, killAll, managed, onManagedExit, send, spawn, startInput, type Managed } from './pty.ts';
 
 const h = React.createElement;
 
@@ -258,7 +258,7 @@ function App({ onAttach }: { onAttach: (m: Managed) => void }) {
         h(Text, { wrap: 'truncate-end' },
           h(Text, { color: STATUS[selected.status].color }, STATUS[selected.status].label),
           selected.detail ? h(Text, { color: 'red' }, ` — ${selected.detail}`) : '',
-          h(Text, { dimColor: true }, `  ·  ${selected.m ? '◆ aberta pelo Maestro (Enter entra, Ctrl+Q volta)' : '◇ aberta em outro terminal (Enter retoma aqui depois que você fechá-la lá)'}`)),
+          h(Text, { dimColor: true }, `  ·  ${selected.m ? '◆ aberta pelo Maestro (Enter entra, Ctrl+Q ou F12 volta)' : '◇ aberta em outro terminal (Enter retoma aqui depois que você fechá-la lá)'}`)),
         h(Text, { dimColor: true, wrap: 'truncate-start' }, selected.cwd),
         h(Text, { dimColor: true, wrap: 'truncate-end' }, selected.id))
     : h(Box, { height: 3 });
@@ -271,7 +271,7 @@ function App({ onAttach }: { onAttach: (m: Managed) => void }) {
 
   const hints = step
     ? '↑↓ escolher · Enter confirmar · Esc cancelar'
-    : 'Tab abas · ↑↓ sessão · Enter entrar/enviar · Ctrl+N nova sessão · Esc limpar · Ctrl+C sair   ◆ Maestro ◇ externa';
+    : 'Tab abas · ↑↓ sessão · Enter entrar/enviar · Ctrl+Q/F12 volta da sessão · Ctrl+N nova sessão · Esc limpar · Ctrl+C sair   ◆ Maestro ◇ externa';
 
   return h(Box, { flexDirection: 'column', height },
     header, body, detail,
@@ -286,9 +286,11 @@ export async function run() {
     console.error('O Maestro precisa de um terminal interativo.');
     process.exit(1);
   }
+  startInput();
+  process.stdout.write('\x1b]0;Maestro\x07');
   for (;;) {
     let next: Managed | undefined;
-    const app = render(h(App, { onAttach: (m: Managed) => { next = store.focus = m; app.unmount(); } }), { exitOnCtrlC: false, alternateScreen: true });
+    const app = render(h(App, { onAttach: (m: Managed) => { next = store.focus = m; app.unmount(); } }), { stdin: inkInput as any, exitOnCtrlC: false, alternateScreen: true });
     await app.waitUntilExit();
     if (!next) break;
     await attach(next);

@@ -12,11 +12,27 @@ test('status do Codex vem do último evento de turno', () => {
   assert.equal(codexStatus('sem eventos', now - 60_000, now), 'idle');
 });
 
-test('Ctrl+Q é reconhecido em byte cru e em win32-input-mode', () => {
+test('Ctrl+Q e F12 saem da sessão em todos os formatos de teclado', () => {
+  // Ctrl+Q
   assert.ok(isDetachKey('\x11'));
-  assert.ok(isDetachKey('\x1b[17;29;0;1;8;1_\x1b[81;16;17;1;8;1_'));
+  assert.ok(isDetachKey('\x1b[17;29;0;1;8;1_\x1b[81;16;17;1;8;1_')); // win32-input-mode
+  assert.ok(isDetachKey('\x1b[113;5u')); // kitty
+  assert.ok(isDetachKey('\x1b[113;5:1u')); // kitty com tipo de evento
+  assert.ok(isDetachKey('\x1b[27;5;113~')); // modifyOtherKeys
+  // F12
+  assert.ok(isDetachKey('\x1b[24~'));
+  assert.ok(isDetachKey('\x1b[123;88;0;1;0;1_'));
+  // F12 que o terminal mandou como texto, embrulhado caractere por caractere pelo ConPTY (visto no log real)
+  assert.ok(isDetachKey('\x1b[0;0;27;1;0;1_\x1b[0;0;91;1;0;1_\x1b[0;0;50;1;0;1_\x1b[0;0;52;1;0;1_\x1b[0;0;126;1;0;1_'));
+  // não são tecla de saída
+  assert.ok(!isDetachKey('q'));
   assert.ok(!isDetachKey('\x1b[81;16;113;1;0;1_')); // "q" sem Ctrl
-  assert.ok(!isDetachKey('\x1b[81;16;17;0;8;1_')); // soltar a tecla não conta
+  assert.ok(!isDetachKey('\x1b[81;16;17;0;8;1_')); // soltar Ctrl+Q
+  assert.ok(!isDetachKey('\x1b[113;5:3u')); // soltar Ctrl+Q (kitty)
+  assert.ok(!isDetachKey('\x1b[81;16;47;1;9;1_')); // AltGr+Q no ABNT2 = "/"
+  assert.ok(!isDetachKey('\x1b[113;7u')); // Ctrl+Alt+Q (AltGr) no kitty
+  assert.ok(!isDetachKey('\x1b[27;7;113~')); // Ctrl+Alt+Q no modifyOtherKeys
+  assert.ok(!isDetachKey('\x1b[<0;10;5M')); // clique de mouse
 });
 
 test('shim .cmd do npm vira o executável real', () => {

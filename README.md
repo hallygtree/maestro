@@ -39,8 +39,8 @@ inside it, so it can also type into them and let you jump in and out.
 - **One prompt box for all of them.** Write a prompt, pick the tool, then pick
   one of its open sessions (grouped by directory) or start a new one in any
   folder.
-- **Jump in and out.** Enter opens a session full screen; Ctrl+Q brings you
-  back to the dashboard.
+- **Jump in and out.** Enter opens a session full screen; Ctrl+Q or F12 brings
+  you back to the dashboard.
 - **Nothing to install in the agents.** Sessions you started in other
   terminals show up on their own.
 - **No build step.** Node.js 24 runs the TypeScript sources directly.
@@ -84,12 +84,12 @@ interactive TTY and exits with a message otherwise.
 │   ✓ Codex       Map unused files             ~\code\api            gpt-6-astra             ◇ │
 │   ✓ Antigravity Migrating project configs    ~\notes                                       ◇ │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
-  rodando  ·  ◆ aberta pelo Maestro (Enter entra, Ctrl+Q volta)
+  rodando  ·  ◆ aberta pelo Maestro (Enter entra, Ctrl+Q ou F12 volta)
   C:\Users\you\code\api
 ╭──────────────────────────────────────────────────────────────────────────────────────────────╮
 │ › Escreva um prompt e Enter para escolher o agente…                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
- Tab abas · ↑↓ sessão · Enter entrar/enviar · Ctrl+N nova sessão · Esc limpar · Ctrl+C sair
+ Tab abas · ↑↓ sessão · Enter entrar/enviar · Ctrl+Q/F12 volta da sessão · Ctrl+N nova sessão · …
 ```
 
 | Mark | Meaning |
@@ -106,12 +106,14 @@ interactive TTY and exits with a message otherwise.
 | `↑` `↓` | Select a session |
 | type, then `Enter` | Send the prompt (see [Sending a prompt](#sending-a-prompt)) |
 | `Enter` with an empty prompt | Enter the selected `◆` session full screen. On a `◇` session, resume it here once you close it ([why](#sessions-opened-elsewhere)) |
-| `Ctrl+Q` | Leave a session and go back to the dashboard |
+| `Ctrl+Q` or `F12` | Leave a session and go back to the dashboard. Use F12 in the VS Code terminal, which keeps Ctrl+Q for itself |
 | `Ctrl+N` | Start a new, empty session: pick the tool, then the directory |
 | `Esc` | Clear the prompt, close a picker, or cancel a pending resume |
 | `Ctrl+C` | Quit. Asks again first if it would close sessions Maestro opened |
 
-The list refreshes every 1.5 seconds.
+The list refreshes every 1.5 seconds. While you are inside a session, the
+terminal tab's title ends with *Ctrl+Q ou F12 volta ao Maestro*, and the first
+time you enter one the hint also shows on screen for a moment.
 
 ## Sending a prompt
 

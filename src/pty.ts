@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { PassThrough } from 'node:stream';
 import pty from 'node-pty';
 import type { IPty } from 'node-pty';
 import type { Agent } from './disk.ts';
@@ -53,6 +54,11 @@ const childEnv = () => {
   return env;
 };
 
+// Enquanto você está dentro de uma sessão, o título da aba lembra como voltar.
+const HINT = 'Ctrl+Q ou F12 volta ao Maestro';
+const withHint = (d: string) =>
+  d.replace(/\x1b\]([02]);([^\x07\x1b]*)(\x07|\x1b\\)/g, (_, n, t, end) => `\x1b]${n};${t} · ${HINT}${end}`);
+
 export function spawn(agent: Agent, cwd: string, opts: { resumeId?: string; prompt?: string } = {}): Managed {
   const [file, pre] = resolve(agent);
   const a = args(agent, opts.resumeId, opts.prompt);
@@ -67,7 +73,7 @@ export function spawn(agent: Agent, cwd: string, opts: { resumeId?: string; prom
     const t = [...d.matchAll(/\x1b\][02];([^\x07\x1b]*)/g)].at(-1)?.[1];
     // ignora o título inicial do ConPTY (caminho do .exe) e tira o spinner que alguns agentes põem na frente
     if (t && !/\.exe$/i.test(t)) m.title = t.replace(/^[^\p{L}\p{N}]+/u, '');
-    if (attached === m) process.stdout.write(d);
+    if (attached === m) process.stdout.write(withHint(d));
   });
   proc.onExit(() => {
     managed.splice(managed.indexOf(m), 1);
@@ -83,48 +89,76 @@ export function send(m: Managed, text: string) {
   setTimeout(() => m.proc.write('\r'), 150); // Enter separado, senão vira quebra de linha dentro do "paste"
 }
 
-// No Windows o ConPTY do agente pede win32-input-mode (?9001h): cada tecla vira ESC[Vk;Sc;Uc;Kd;Cs;Rc_.
-// Ligamos esse modo ao entrar (preserva Shift+Enter etc.) e reconhecemos Ctrl+Q nos dois formatos.
 const WIN = process.platform === 'win32';
-export const isDetachKey = (s: string) => s.includes('\x11') || /\x1b\[81;\d+;17;1;/.test(s);
 
-const RESET = '\x1b[?9001l\x1b[?1004l\x1b[?1049l\x1b[?25h\x1b[?2004l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[0m\x1b[<u';
+// Com win32-input-mode ligado, o ConPTY embrulha cada tecla em ESC[Vk;Sc;Uc;Kd;Cs;Rc_. O que o terminal mandou
+// como texto (o F12 do VS Code, "ESC[24~") chega caractere por caractere. Aqui volta a ser texto, só com as teclas pressionadas.
+export const unwrapWin32 = (s: string) =>
+  s.replace(/\x1b\[(\d+);\d+;(\d+);(\d+);\d+;\d+_/g, (_, vk, uc, down) =>
+    down !== '1' ? '' : +uc ? String.fromCharCode(+uc) : vk === '123' ? '\x1b[24~' : '');
+
+// Tecla de saída: Ctrl+Q ou F12 (o terminal do VS Code engole o Ctrl+Q para o "Quick Open View").
+// Depois de desembrulhar, o Ctrl+Q ainda pode vir cru (0x11), no formato kitty (ESC[113;5u) ou modifyOtherKeys (ESC[27;5;113~).
+// Ctrl sem Alt: AltGr chega como Ctrl+Alt, e no ABNT2 AltGr+Q digita "/".
+const ctrlOnly = (mods: string) => ((+mods - 1) & 4) !== 0 && ((+mods - 1) & 2) === 0;
+export function isDetachKey(raw: string): boolean {
+  const s = unwrapWin32(raw);
+  if (s.includes('\x11') || /\x1b\[24(;\d+)?~/.test(s)) return true;
+  for (const [, key, mods, event] of s.matchAll(/\x1b\[(\d+)(?::\d+)*;(\d+)(?::(\d+))?u/g))
+    if (key === '113' && ctrlOnly(mods) && event !== '3') return true; // evento 3 = soltar a tecla
+  for (const [, mods, key] of s.matchAll(/\x1b\[27;(\d+);(\d+)~/g))
+    if (key === '113' && ctrlOnly(mods)) return true;
+  return false;
+}
+
+// Desliga o que o agente pode ter ligado: win32-input, foco, tela alternativa, cursor, paste, mouse,
+// modifyOtherKeys e todos os níveis do teclado kitty.
+const RESET = '\x1b[?9001l\x1b[?1004l\x1b[?1049l\x1b[?25h\x1b[?2004l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[>4m\x1b[<99u\x1b[0m';
 const CLEAR = '\x1b[2J\x1b[3J\x1b[H';
 
-// Entra na sessão: o terminal inteiro passa a ser do agente até Ctrl+Q.
+// Um único leitor do stdin, sempre em raw mode e nunca pausado. No Windows, desligar o raw mode com a leitura
+// ativa deixa o libuv preso numa leitura em modo linha que come as teclas seguintes: era assim que a segunda
+// entrada numa sessão ficava surda, sem Ctrl+Q. O painel (Ink) lê de um stream que finge ser terminal.
+export const inkInput = Object.assign(new PassThrough(), {
+  isTTY: true,
+  setRawMode() { return inkInput; },
+  ref() { return inkInput; },
+  unref() { return inkInput; },
+});
+let onKey: ((s: string) => void) | undefined;
+export function startInput() {
+  process.stdin.setRawMode(true);
+  process.stdin.on('data', (b: Buffer) => (onKey ? onKey(b.toString()) : inkInput.write(b)));
+}
+
+let hinted = false;
+
+// Entra na sessão: o terminal inteiro passa a ser do agente até Ctrl+Q ou F12.
 // ponytail: sem emulador de terminal no meio; o redesenho vem de um "resize" forçado.
 // Modos que o agente ligou antes (mouse, bracketed paste) não são reativados ao voltar. Upgrade: @xterm/headless.
 export function attach(m: Managed): Promise<void> {
-  const { stdin, stdout } = process;
+  const { stdout } = process;
   return new Promise((done) => {
-    const onKey = (b: Buffer | string) => {
-      const s = b.toString();
-      if (isDetachKey(s)) return detachCurrent?.();
-      m.proc.write(s);
-    };
-    const swallow = () => {}; // key-ups que ainda chegam depois do Ctrl+Q não podem vazar pro painel
     const onResize = () => m.proc.resize(stdout.columns, stdout.rows);
     detachCurrent = () => {
       detachCurrent = attached = undefined;
-      stdin.off('data', onKey);
-      stdin.on('data', swallow);
+      onKey = () => {}; // key-ups que ainda chegam depois do Ctrl+Q não podem vazar pro painel
       stdout.off('resize', onResize);
-      stdout.write(RESET + CLEAR);
-      setTimeout(() => {
-        stdin.off('data', swallow);
-        stdin.setRawMode(false);
-        stdin.pause();
-        done();
-      }, 200);
+      stdout.write(RESET + CLEAR + '\x1b]0;Maestro\x07');
+      setTimeout(() => { onKey = undefined; done(); }, 200);
     };
-    attached = m;
-    stdout.write(CLEAR + (WIN ? '\x1b[?9001h\x1b[?1004h' : ''));
-    stdin.setRawMode(true);
-    stdin.resume();
-    stdin.on('data', onKey);
-    stdout.on('resize', onResize);
-    m.proc.resize(stdout.columns, Math.max(2, stdout.rows - 1));
-    setTimeout(onResize, 60);
+    stdout.write(CLEAR + `\x1b]0;${m.title || m.agent} · ${HINT}\x07`);
+    // Na primeira vez, a dica fica na tela um instante antes de o agente desenhar por cima.
+    if (!hinted) stdout.write(`\x1b[2;3H\x1b[1;36m♪ Maestro\x1b[0m   ${HINT}\x1b[H`);
+    setTimeout(() => {
+      attached = m;
+      if (WIN) stdout.write('\x1b[?9001h\x1b[?1004h');
+      onKey = (s) => (isDetachKey(s) ? detachCurrent?.() : m.proc.write(s));
+      stdout.on('resize', onResize);
+      m.proc.resize(stdout.columns, Math.max(2, stdout.rows - 1));
+      setTimeout(onResize, 60);
+    }, hinted ? 0 : 1500);
+    hinted = true;
   });
 }
 
