@@ -65,7 +65,7 @@ cd maestro
 npm install
 npm link      # puts a `maestro` command on your PATH
 
-maestro       # from any folder, in cmd or PowerShell
+maestro       # from any folder, in cmd, PowerShell or Git Bash
 ```
 
 `npm link` points the global command at this folder, so a `git pull` is all an
