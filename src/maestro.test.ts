@@ -3,6 +3,7 @@ import test from 'node:test';
 import { agyLimits, claudeLimits, codexLimits, codexStatus, lockedInodes, type Session } from './disk.ts';
 import { MODES, args, isDetachKey, shimTarget, type Managed } from './pty.ts';
 import { edit, merge, pack, remember, track, wrap, type Recent, type Row } from './ui.ts';
+import { newer } from './update.ts';
 
 test('recent sessions: new ones first, live ones updated in place, external and id-less left out', () => {
   const m = { mode: ['-s', 'read-only'] } as Managed;
@@ -153,4 +154,11 @@ test('prompt wraps at spaces, keeps every char, hard-breaks long words; hints br
     assert.ok(lines.every((l) => l.length <= w));
   }
   assert.deepEqual(pack(['Tab tabs', 'Esc clear', 'Ctrl+C quit'], 20), ['Tab tabs · Esc clear', 'Ctrl+C quit']);
+});
+
+test('self-update only moves to a newer version', () => {
+  assert.equal(newer('0.3.0', '0.2.0'), true);
+  assert.equal(newer('0.10.0', '0.9.1'), true);
+  assert.equal(newer('0.2.0', '0.2.0'), false);
+  assert.equal(newer('0.1.9', '0.2.0'), false);
 });

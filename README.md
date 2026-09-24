@@ -8,7 +8,7 @@ session you have open: it shows each one's status and lets you send a prompt
 to any of them from one place.**
 
 It reads the state each agent already writes to disk: no hooks, no changes to
-the agents' settings, no network calls. Sessions you open through Maestro run
+the agents' settings, no network calls beyond the update check. Sessions you open through Maestro run
 inside it, so it can also type into them and let you jump in and out.
 
 > [!NOTE]
@@ -82,7 +82,9 @@ its own Node.js, and puts only the `maestro` command on your `PATH`:
 | Windows | `%LOCALAPPDATA%\Programs\maestro` | `...\maestro\bin\maestro.cmd` | added to your user `Path` |
 | Linux, macOS | `~/.local/share/maestro` | `~/.local/bin/maestro` | added to `~/.zshrc` or `~/.bashrc` if missing |
 
-To update, run the same command again. To uninstall, delete those folders (on
+Maestro updates itself: on launch it checks GitHub for a newer release,
+installs it and starts the new version. You can also update by running the
+same command again. To uninstall, delete those folders (on
 Windows, also remove `...\maestro\bin` from your user `Path`).
 
 Run it in a real terminal (Windows Terminal, the VS Code terminal, Terminal.app,
@@ -250,8 +252,10 @@ trusted workspaces in the Antigravity CLI settings.
 - **Read-only for the agents.** Maestro only reads the agents' files listed
   above. Its own prompt history and recent sessions go to `~/.maestro/`.
 - **No credentials.** It never opens token or login files.
-- **No network.** Everything stays on your machine. The agents you run through
-  Maestro make their own calls, as they would in any terminal.
+- **One network call.** On launch, Maestro asks GitHub for the latest release
+  and downloads it if it is newer. `MAESTRO_NO_UPDATE=1` turns that off.
+  Everything else stays on your machine. The agents you run through Maestro
+  make their own calls, as they would in any terminal.
 - **Clean environment.** When Maestro itself runs inside Claude Code, it strips
   the parent session's markers from the environment, so the agents it starts
   save their own history.
@@ -307,6 +311,7 @@ src/
   ui.ts             dashboard, tabs and prompt routing (Ink)
   disk.ts           finds live sessions and plan usage from each tool's own files
   pty.ts            sessions Maestro opens (node-pty), enter and leave
+  update.ts         self-update from GitHub Releases on launch
   maestro.test.ts   tests for status, keys, launchers, session matching, locks and usage
 install.sh          installer for Linux and macOS
 install.ps1         installer for Windows
