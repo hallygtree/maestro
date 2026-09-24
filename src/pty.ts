@@ -24,16 +24,19 @@ export function shimTarget(cmdText: string, dir: string): [string, string[]] | u
   return target.endsWith('.js') ? [process.execPath, [target]] : [target, []];
 }
 
+// Throws when it's not on PATH: on Unix node-pty would fork anyway and the child would die silently.
 function resolve(name: string): [string, string[]] {
-  if (process.platform !== 'win32') return [name, []];
-  for (const dir of (process.env.PATH ?? '').split(path.delimiter)) {
+  for (const dir of (process.env.PATH ?? '').split(path.delimiter).filter(Boolean)) {
+    if (process.platform !== 'win32') {
+      try { fs.accessSync(path.join(dir, name), fs.constants.X_OK); return [path.join(dir, name), []]; } catch { continue; }
+    }
     const exe = path.join(dir, name + '.exe');
     if (fs.existsSync(exe)) return [exe, []];
     const cmd = path.join(dir, name + '.cmd');
     const t = fs.existsSync(cmd) && shimTarget(fs.readFileSync(cmd, 'utf8'), dir);
     if (t) return t;
   }
-  return [name, []];
+  throw new Error(`${name} not found on PATH`);
 }
 
 // Modes each CLI accepts at launch. Only what the agent supports; the first is always its own config.
@@ -164,7 +167,9 @@ let hinted = false;
 export function attach(m: Managed): Promise<void> {
   const { stdout } = process;
   return new Promise((done) => {
-    const onResize = () => m.proc.resize(stdout.columns, stdout.rows);
+    // Some terminals report 0x0; node-pty throws on that and would take Maestro down.
+    const cols = () => stdout.columns || 120, rows = () => stdout.rows || 30;
+    const onResize = () => m.proc.resize(cols(), rows());
     detachCurrent = () => {
       detachCurrent = attached = undefined;
       onKey = () => {}; // key-ups still arriving after Ctrl+Q must not leak into the dashboard
@@ -180,7 +185,7 @@ export function attach(m: Managed): Promise<void> {
       if (WIN) stdout.write('\x1b[?9001h\x1b[?1004h');
       onKey = (s) => (isDetachKey(s) ? detachCurrent?.() : m.proc.write(s));
       stdout.on('resize', onResize);
-      m.proc.resize(stdout.columns, Math.max(2, stdout.rows - 1));
+      m.proc.resize(cols(), Math.max(2, rows() - 1));
       setTimeout(onResize, 60);
     }, hinted ? 0 : 1500);
     hinted = true;

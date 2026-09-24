@@ -2,7 +2,9 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
+import { fileURLToPath } from 'node:url';
 
 export type Agent = 'claude' | 'codex' | 'agy';
 export type Status = 'busy' | 'waiting' | 'idle';
@@ -65,13 +67,36 @@ function modelOf(file: string, log: string): string | undefined {
 
 const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 
-// Codex and agy hold a byte-range lock on the file while the session is open: reading gives EBUSY.
-// ponytail: Windows only (on Unix these locks are advisory); on another OS, switch to a process check.
-export function isLocked(file: string): boolean {
+// Codex and agy hold a lock on <dir>/<id>.lock while the session is open.
+// Windows: the lock is mandatory, reading gives EBUSY.
+function isLocked(file: string): boolean {
   let fd: number | undefined;
   try { fd = fs.openSync(file, 'r'); fs.readSync(fd, Buffer.alloc(1), 0, 1, 0); return false; }
   catch (e: any) { return e.code === 'EBUSY'; }
   finally { if (fd !== undefined) fs.closeSync(fd); }
+}
+
+// Linux: advisory locks show up in /proc/locks as "1: FLOCK ADVISORY WRITE <pid> MAJ:MIN:INODE 0 EOF".
+// ponytail: matches by inode only, a same-inode lock on another device is ignored.
+export const lockedInodes = (procLocks: string) =>
+  new Set([...procLocks.matchAll(/ [0-9a-f]+:[0-9a-f]+:(\d+) /g)].map((m) => m[1]));
+
+// Ids whose <dir>/<id>.lock is held.
+export function heldLocks(dir: string): string[] {
+  const ids = list(dir, '.lock').map((f) => f.slice(0, -5));
+  if (!ids.length) return [];
+  const file = (id: string) => path.join(dir, id + '.lock');
+  if (process.platform === 'win32') return ids.filter((id) => isLocked(file(id)));
+  if (process.platform === 'linux') {
+    let inodes: Set<string>;
+    try { inodes = lockedInodes(fs.readFileSync('/proc/locks', 'utf8')); } catch { return []; }
+    return ids.filter((id) => { try { return inodes.has(String(fs.statSync(file(id), { bigint: true }).ino)); } catch { return false; } });
+  }
+  // macOS has no /proc/locks: ask lsof which files in dir are open (exit 1 = none, stdout still valid).
+  // ponytail: "open" rather than "locked"; the agents only keep the .lock open while the session lives.
+  const open = new Set((spawnSync('lsof', ['-F', 'n', '+d', dir], { encoding: 'utf8' }).stdout ?? '')
+    .split('\n').filter((l) => l.startsWith('n')).map((l) => path.basename(l.slice(1))));
+  return ids.filter((id) => open.has(id + '.lock'));
 }
 
 // ~/.claude/sessions/<pid>.json is kept by Claude Code itself with live status.
@@ -113,8 +138,7 @@ function codexRollout(id: string): string | undefined {
 }
 
 function codex(): Session[] {
-  const locks = home('.codex', 'thread-writer-locks');
-  const live = list(locks, '.lock').map((f) => f.slice(0, -5)).filter((id) => isLocked(path.join(locks, id + '.lock')));
+  const live = heldLocks(home('.codex', 'thread-writer-locks'));
   if (!live.length) return [];
   const names = new Map(readJsonl(home('.codex', 'session_index.jsonl')).map((r) => [r.id, r.thread_name]));
   const prompts = new Map<string, string>();
@@ -131,8 +155,8 @@ function codex(): Session[] {
 }
 
 function agy(): Session[] {
-  const base = home('.gemini', 'antigravity-cli'), presence = path.join(base, 'presence');
-  const live = list(presence, '.lock').map((f) => f.slice(0, -5)).filter((id) => isLocked(path.join(presence, id + '.lock')));
+  const base = home('.gemini', 'antigravity-cli');
+  const live = heldLocks(path.join(base, 'presence'));
   if (!live.length) return [];
   let db: DatabaseSync | undefined;
   try {
@@ -142,7 +166,7 @@ function agy(): Session[] {
       const r = q.get(id) as any;
       const uri = r && JSON.parse(r.workspace_uris)[0];
       const status: Status = /RUNNING|BUSY/.test(r?.status) ? 'busy' : /WAIT|PENDING/.test(r?.status) ? 'waiting' : 'idle';
-      return { agent: 'agy', id, cwd: uri ? decodeURIComponent(new URL(uri).pathname).replace(/^\/(\w:)/, '$1').replaceAll('/', path.sep) : '', title: r?.title ?? '', status };
+      return { agent: 'agy', id, cwd: uri ? fileURLToPath(uri) : '', title: r?.title ?? '', status };
     });
   } catch { return []; } finally { db?.close(); }
 }

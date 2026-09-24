@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { agyLimits, claudeLimits, codexLimits, codexStatus, type Session } from './disk.ts';
+import { agyLimits, claudeLimits, codexLimits, codexStatus, lockedInodes, type Session } from './disk.ts';
 import { MODES, args, isDetachKey, shimTarget, type Managed } from './pty.ts';
 import { edit, merge, pack, remember, track, wrap, type Recent, type Row } from './ui.ts';
 
@@ -30,6 +30,14 @@ test('Codex status comes from the last turn event', () => {
   assert.equal(codexStatus('{"type":"task_started"}\n{"type":"task_complete"}', 0, now), 'idle');
   assert.equal(codexStatus('no events', now - 5_000, now), 'busy'); // long turn, log just changed
   assert.equal(codexStatus('no events', now - 60_000, now), 'idle');
+});
+
+test('Linux lock detection reads inodes from /proc/locks', () => {
+  const procLocks = '1: FLOCK  ADVISORY  WRITE 4242 08:01:1310723 0 EOF\n'
+    + '2: POSIX  ADVISORY  WRITE 99 fd:00:42 0 EOF\n'
+    + '3: OFDLCK ADVISORY  READ  -1 00:1a:77 0 EOF\n';
+  assert.deepEqual([...lockedInodes(procLocks)], ['1310723', '42', '77']);
+  assert.equal(lockedInodes('').size, 0);
 });
 
 test('Ctrl+Q and F12 leave the session in every keyboard format', () => {

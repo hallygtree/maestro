@@ -1,8 +1,7 @@
 # Maestro
 
 [![License](https://img.shields.io/github/license/hallygtree/maestro)](LICENSE)
-[![Node.js](https://img.shields.io/badge/node-%3E%3D24-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
-[![Platform](https://img.shields.io/badge/platform-Windows-0078D4)](#limitations)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-0078D4)](#limitations)
 
 **Maestro pulls the strings of every Claude Code, Codex CLI and Antigravity
 session you have open: it shows each one's status and lets you send a prompt
@@ -13,7 +12,9 @@ the agents' settings, no network calls. Sessions you open through Maestro run
 inside it, so it can also type into them and let you jump in and out.
 
 > [!NOTE]
-> Maestro is an early prototype (`v0.1.0`) and runs on Windows only for now.
+> Maestro is an early prototype (`v0.2.0`). It is used daily on Windows; Linux
+> and macOS builds pass the tests but are new (see [Limitations](#limitations)).
+
 ## Contents
 
 - [Features](#features)
@@ -44,7 +45,8 @@ inside it, so it can also type into them and let you jump in and out.
   you back to the dashboard.
 - **Nothing to install in the agents.** Sessions you started in other
   terminals show up on their own.
-- **No build step.** Node.js 24 runs the TypeScript sources directly.
+- **One-line install.** No Node.js, npm or clone needed: each release bundles
+  its own runtime.
 
 ## Supported tools
 
@@ -56,24 +58,36 @@ inside it, so it can also type into them and let you jump in and out.
 
 ## Quick start
 
-You need [Node.js](https://nodejs.org) 24 or newer and at least one of the
-supported CLIs on your `PATH`. `node-pty` ships prebuilt binaries for Windows
-x64 and arm64, so no C++ build tools are needed.
+Install for your user, with nothing else required. At least one of the
+supported CLIs must be on your `PATH`.
+
+**Windows** (PowerShell):
 
 ```powershell
-git clone https://github.com/hallygtree/maestro.git
-cd maestro
-npm install
-npm link      # puts a `maestro` command on your PATH
-
-maestro       # from any folder, in cmd, PowerShell or Git Bash
+irm https://raw.githubusercontent.com/hallygtree/maestro/main/install.ps1 | iex
 ```
 
-`npm link` points the global command at this folder, so a `git pull` is all an
-update takes. To remove the command, run `npm unlink -g maestro`.
+**Linux and macOS** (x64 and arm64):
 
-Run it in a real terminal (Windows Terminal, the VS Code terminal). It needs an
-interactive TTY and exits with a message otherwise.
+```sh
+curl -fsSL https://raw.githubusercontent.com/hallygtree/maestro/main/install.sh | sh
+```
+
+Then run `maestro` from any folder (on Windows: cmd, PowerShell or Git Bash).
+The installer downloads the latest release for your OS and CPU, which carries
+its own Node.js, and puts only the `maestro` command on your `PATH`:
+
+| OS | Files | Command | PATH |
+|----|-------|---------|------|
+| Windows | `%LOCALAPPDATA%\Programs\maestro` | `...\maestro\bin\maestro.cmd` | added to your user `Path` |
+| Linux, macOS | `~/.local/share/maestro` | `~/.local/bin/maestro` | added to `~/.zshrc` or `~/.bashrc` if missing |
+
+To update, run the same command again. To uninstall, delete those folders (on
+Windows, also remove `...\maestro\bin` from your user `Path`).
+
+Run it in a real terminal (Windows Terminal, the VS Code terminal, Terminal.app,
+iTerm2, any Linux terminal). It needs an interactive TTY and exits with a
+message otherwise.
 
 ## Using Maestro
 
@@ -147,7 +161,7 @@ What happens next depends on the session:
 
 ## Sessions opened elsewhere
 
-Windows has no way to type into a program running in another terminal window,
+There is no reliable way to type into a program running in another terminal window,
 and running the same session twice would split its history. So for a session
 you started elsewhere, Maestro waits:
 
@@ -186,8 +200,11 @@ reads them from the same places as [Trayce](https://github.com/hallygtree/trayce
 | Tool | Where the numbers come from | Needs Trayce |
 |------|-----------------------------|--------------|
 | **Codex CLI** | the `rate_limits` snapshot Codex writes to its rollout logs on every turn | no |
-| **Claude Code** | `%APPDATA%\trayce\claude_rate_limits.json`, which Trayce saves from Claude Code's status line (`trayce --setup-claude`) | yes |
-| **Antigravity** | `%APPDATA%\trayce\antigravity_quota.json`, which Trayce saves while the Antigravity desktop app is open | yes |
+| **Claude Code** | `trayce/claude_rate_limits.json`, which Trayce saves from Claude Code's status line (`trayce --setup-claude`) | yes |
+| **Antigravity** | `trayce/antigravity_quota.json`, which Trayce saves while the Antigravity desktop app is open | yes |
+
+The `trayce` folder is in `%APPDATA%` on Windows, `~/Library/Application Support`
+on macOS and `~/.local/share` (or `$XDG_DATA_HOME`) on Linux.
 
 Without that data, the tab says what to do instead of showing a number.
 
@@ -205,7 +222,8 @@ jobs are not listed.
 
 - **Which sessions are open:** Codex holds a lock on
   `~/.codex/thread-writer-locks/<id>.lock` while a thread is open. Maestro
-  checks the lock.
+  checks the lock: on Windows the file can't be read, on Linux the lock is
+  listed in `/proc/locks`, and on macOS `lsof` shows the file open.
 - **Directory and model:** from the thread's rollout log.
 - **Status:** the last turn event in the rollout. A started turn with no
   matching completion means it is running.
@@ -215,7 +233,8 @@ jobs are not listed.
 
 ### Antigravity
 
-`agy` holds a lock on `presence/<id>.lock` while a conversation is open.
+`agy` holds a lock on `presence/<id>.lock` while a conversation is open,
+checked the same way as Codex.
 Maestro reads the title, workspace and status of those conversations from
 `conversation_summaries.db`, opened read-only.
 
@@ -227,8 +246,8 @@ trusted workspaces in the Antigravity CLI settings.
 
 ## Privacy
 
-- **Read-only.** Maestro only reads the files listed above and writes none of
-  its own.
+- **Read-only for the agents.** Maestro only reads the agents' files listed
+  above. Its own prompt history and recent sessions go to `~/.maestro/`.
 - **No credentials.** It never opens token or login files.
 - **No network.** Everything stays on your machine. The agents you run through
   Maestro make their own calls, as they would in any terminal.
@@ -238,8 +257,12 @@ trusted workspaces in the Antigravity CLI settings.
 
 ## Limitations
 
-- **Windows only.** Codex and Antigravity sessions are detected through Windows
-  file locks, and sessions run on ConPTY.
+- **Linux and macOS are new.** They pass the same tests as Windows, and Linux
+  was run end to end in a container, but not yet with real Codex or
+  Antigravity sessions. On macOS, Codex and Antigravity detection relies on
+  `lsof`, and F12 may need `Fn`; Ctrl+Q works everywhere.
+- **Linux builds need glibc 2.35 or newer** (Ubuntu 22.04, Debian 12, Fedora
+  36 and later). Alpine and other musl distros are not supported.
 - **Typing into other terminals.** Maestro cannot type into sessions opened
   elsewhere; it resumes them after you close them (see above).
 - **Codex approvals.** A Codex session waiting for your approval shows as
@@ -267,9 +290,14 @@ Antigravity CLI 1.2.10.
 
 ## Development
 
-```powershell
+Needs [Node.js](https://nodejs.org) 24 or newer.
+
+```sh
+git clone https://github.com/hallygtree/maestro.git
+cd maestro
+npm install
 npm test     # node:test, no extra dependencies
-npm start    # runs this checkout without the global command
+npm start    # runs this checkout
 ```
 
 ```text
@@ -277,9 +305,16 @@ src/
   cli.ts            entry point
   ui.ts             dashboard, tabs and prompt routing (Ink)
   disk.ts           finds live sessions and plan usage from each tool's own files
-  pty.ts            sessions Maestro opens (node-pty / ConPTY), enter and leave
-  maestro.test.ts   tests for status, keys, launchers, session matching and usage
+  pty.ts            sessions Maestro opens (node-pty), enter and leave
+  maestro.test.ts   tests for status, keys, launchers, session matching, locks and usage
+install.sh          installer for Linux and macOS
+install.ps1         installer for Windows
+.github/workflows/release.yml
+                    tests on the six platforms; a v* tag publishes one
+                    tarball per platform (Node + node_modules) to Releases
 ```
+
+To release, bump `version` in `package.json` and push a `v*` tag.
 
 Built with [Ink](https://github.com/vadimdemedes/ink) and
 [node-pty](https://github.com/microsoft/node-pty). Node.js 24 runs the `.ts`
