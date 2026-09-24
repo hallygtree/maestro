@@ -4,8 +4,8 @@
 [![Node.js](https://img.shields.io/badge/node-%3E%3D24-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
 [![Platform](https://img.shields.io/badge/platform-Windows-0078D4)](#limitations)
 
-**Maestro is a terminal app that shows every Claude Code, Codex CLI and
-Antigravity session you have open, with its status, and lets you send a prompt
+**Maestro pulls the strings of every Claude Code, Codex CLI and Antigravity
+session you have open: it shows each one's status and lets you send a prompt
 to any of them from one place.**
 
 It reads the state each agent already writes to disk: no hooks, no changes to
@@ -14,8 +14,6 @@ inside it, so it can also type into them and let you jump in and out.
 
 > [!NOTE]
 > Maestro is an early prototype (`v0.1.0`) and runs on Windows only for now.
-> The interface text is in Brazilian Portuguese.
-
 ## Contents
 
 - [Features](#features)
@@ -39,7 +37,7 @@ inside it, so it can also type into them and let you jump in and out.
   session title, working directory and model.
 - **One prompt box for all of them.** Write a prompt, pick the tool, then pick
   one of its open sessions (grouped by directory) or start a new one in any
-  folder.
+  folder. The box grows as you type and the cursor moves with the arrow keys.
 - **Plan usage per tool.** The 5-hour and weekly limits of each plan, with
   reset times, on each tool's tab.
 - **Jump in and out.** Enter opens a session full screen; Ctrl+Q or F12 brings
@@ -80,20 +78,20 @@ interactive TTY and exits with a message otherwise.
 ## Using Maestro
 
 ```text
- ♪ Maestro  Todos 4  Claude 2  Codex 1  Antigravity 1              1 rodando · 1 esperando você
- Claude 5h 43%  ·  7d 12%   Codex 5h 67%  ·  7d 31%   Antigravity 5h 14%  ·  7d 45%
+ ✥ Maestro  All 4  Claude 2  Codex 1  Antigravity 1                 1 running · 1 waiting on you
 ╭──────────────────────────────────────────────────────────────────────────────────────────────╮
 │ ❯ ● Claude      refactor-auth-middleware     ~\code\api            claude-opus-5-5         ◆ │
 │   ◐ Claude      fix-flaky-tests              ~\code\web            claude-opus-5-5         ◇ │
 │   ✓ Codex       Map unused files             ~\code\api            gpt-6-astra             ◇ │
 │   ✓ Antigravity Migrating project configs    ~\notes                                       ◇ │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
-  rodando  ·  ◆ aberta pelo Maestro (Enter entra, Ctrl+Q ou F12 volta)
+  running  ·  ◆ opened by Maestro (Enter goes in, Ctrl+Q or F12 comes back)
   C:\Users\you\code\api
 ╭──────────────────────────────────────────────────────────────────────────────────────────────╮
-│ › Escreva um prompt e Enter para escolher o agente…                                          │
+│ › Write a prompt and press Enter to pick the agent…                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
- Tab abas · ↑↓ sessão · Enter entrar/enviar · Ctrl+Q/F12 volta da sessão · Ctrl+N nova sessão · …
+ Tab tabs · ↑↓ session · ←→ cursor · Enter open/send · Ctrl+Q/F12 leave session · Ctrl+N new session
+ Ctrl+R history · Ctrl+O resume · Esc clear · Ctrl+C quit · ◆ Maestro ◇ external
 ```
 
 | Mark | Meaning |
@@ -106,9 +104,10 @@ interactive TTY and exits with a message otherwise.
 
 | Key | What it does |
 |-----|--------------|
-| `Tab` / `Shift+Tab` | Switch between the *Todos* (all) tab and one tab per tool |
+| `Tab` / `Shift+Tab` | Switch between the *All* tab and one tab per tool |
 | `↑` `↓` | Select a session |
-| type, then `Enter` | Send the prompt (see [Sending a prompt](#sending-a-prompt)) |
+| type, then `Enter` | Send the prompt (see [Sending a prompt](#sending-a-prompt)). Long prompts wrap and the box grows |
+| `←` `→` `Home` `End` | Move the cursor in the prompt box. `Backspace` and `Delete` edit at the cursor |
 | `Enter` with an empty prompt | Enter the selected `◆` session full screen. On a `◇` session, resume it here once you close it ([why](#sessions-opened-elsewhere)) |
 | `Ctrl+Q` or `F12` | Leave a session and go back to the dashboard. Use F12 in the VS Code terminal, which keeps Ctrl+Q for itself |
 | `Ctrl+N` | Start a new, empty session: pick the tool, the directory, then the mode |
@@ -117,19 +116,21 @@ interactive TTY and exits with a message otherwise.
 | `Esc` | Clear the prompt, close a picker, or cancel a pending resume |
 | `Ctrl+C` | Quit. Asks again first if it would close sessions Maestro opened |
 
-The list refreshes every 1.5 seconds. While you are inside a session, the
-terminal tab's title ends with *Ctrl+Q ou F12 volta ao Maestro*, and the first
-time you enter one the hint also shows on screen for a moment.
+The list refreshes every 1.5 seconds. In a narrow window the key hints under
+the prompt box wrap onto more lines instead of being cut off. While you are
+inside a session, the terminal tab's title ends with *Ctrl+Q or F12 returns to
+Maestro*, and the first time you enter one the hint also shows on screen for a
+moment.
 
 ## Sending a prompt
 
 1. Type the prompt and press `Enter`.
 2. **Pick the tool.** On a tool's tab this step is skipped.
 3. **Pick the session.** Maestro lists that tool's open sessions with their
-   directories, the ones it opened first, then **＋ Nova sessão…** (new session).
+   directories, the ones it opened first, then **＋ New session…**.
 4. For a new session, **pick the directory.** The folder you started Maestro
    from comes first, then every folder where Claude Code, Codex or Antigravity
-   has already run, then **✎ Outro caminho…** (another path) to type one.
+   has already run, then **✎ Other path…** to type one.
 5. For a new session, **pick the mode** it starts in. Each tool lists only the
    modes its CLI accepts at launch: Claude Code has manual, accept edits, plan,
    auto and bypass; Codex has read-only, auto and bypass; Antigravity has
@@ -169,12 +170,11 @@ Maestro starts and resumes each tool with its own flags:
 
 ## Plan usage
 
-The line under the tabs shows how much of each plan you have used. The *Todos*
-tab has the percentages for all three tools; a tool's tab adds a bar and the
-reset time:
+On each tool's tab, the line under the tabs shows how much of that plan you
+have used, with a bar and the reset time. The *All* tab leaves it out:
 
 ```text
- 5h 67% ▓▓▓▓▓▓▓░░░ reseta 14:05  ·  7d 31% ▓▓▓░░░░░░░ reseta ter 09:42
+ 5h 67% ▓▓▓▓▓▓▓░░░ resets 14:05  ·  7d 31% ▓▓▓░░░░░░░ resets Tue 09:42
 ```
 
 Green is below 50%, yellow 50% to 79%, red 80% or more. A window whose reset
@@ -249,7 +249,8 @@ trusted workspaces in the Antigravity CLI settings.
 - **Coming back from a session.** Maestro redraws the agent by resizing it.
   Terminal modes the agent switched on earlier, such as mouse reporting, are
   not restored when you enter it again.
-- **Single-line prompts.** The prompt box does not take line breaks.
+- **No line breaks in prompts.** Long prompts wrap in the box, but `Enter`
+  always sends, and pasted line breaks become spaces.
 - **Two new sessions, same folder.** A new Codex or Antigravity session gets its
   ID only after its first turn, and until then it is matched by folder. Two new
   sessions of the same tool in the same folder can swap places.

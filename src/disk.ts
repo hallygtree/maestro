@@ -1,4 +1,4 @@
-// Descobre sessões vivas lendo o que cada agente já grava em disco. Nada é instalado nos agentes.
+// Finds live sessions by reading what each agent already writes to disk. Nothing is installed in the agents.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -54,7 +54,7 @@ function firstLine(file: string): any {
 
 const lastMatch = (s: string, re: RegExp) => [...s.matchAll(re)].at(-1)?.[1];
 
-// Modelo: procura no fim do log; se não achar, lê o arquivo inteiro uma vez e guarda.
+// Model: look at the end of the log; if it's not there, read the whole file once and cache it.
 const models = new Map<string, string | undefined>();
 function modelOf(file: string, log: string): string | undefined {
   const m = lastMatch(log, MODEL);
@@ -65,8 +65,8 @@ function modelOf(file: string, log: string): string | undefined {
 
 const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 
-// Codex e agy seguram um lock de intervalo de bytes no arquivo enquanto a sessão está aberta: ler dá EBUSY.
-// ponytail: só vale no Windows (no Unix esses locks são advisory); em outro SO, trocar por checagem de processo.
+// Codex and agy hold a byte-range lock on the file while the session is open: reading gives EBUSY.
+// ponytail: Windows only (on Unix these locks are advisory); on another OS, switch to a process check.
 export function isLocked(file: string): boolean {
   let fd: number | undefined;
   try { fd = fs.openSync(file, 'r'); fs.readSync(fd, Buffer.alloc(1), 0, 1, 0); return false; }
@@ -74,7 +74,7 @@ export function isLocked(file: string): boolean {
   finally { if (fd !== undefined) fs.closeSync(fd); }
 }
 
-// ~/.claude/sessions/<pid>.json é mantido pelo próprio Claude Code com status ao vivo.
+// ~/.claude/sessions/<pid>.json is kept by Claude Code itself with live status.
 function claude(): Session[] {
   const dir = home('.claude', 'sessions');
   return list(dir, '.json').flatMap((f) => {
@@ -82,7 +82,7 @@ function claude(): Session[] {
     if (!s?.sessionId || s.kind !== 'interactive' || !alive(s.pid)) return [];
     const transcript = home('.claude', 'projects', s.cwd.replace(/[^a-zA-Z0-9]/g, '-'), s.sessionId + '.jsonl');
     return [{
-      // além de idle/waiting o Claude usa busy, shell etc. — tudo isso é "rodando"
+      // besides idle/waiting Claude uses busy, shell etc. — all of that is "running"
       agent: 'claude', id: s.sessionId, cwd: s.cwd, title: s.name ?? '',
       status: s.status === 'waiting' || s.status === 'idle' || !s.status ? s.status ?? 'idle' : 'busy',
       detail: s.waitingFor, model: modelOf(transcript, tail(transcript)),
@@ -90,15 +90,15 @@ function claude(): Session[] {
   });
 }
 
-// Status do Codex = último evento de turno no rollout.
-// ponytail: não detecta pedido de aprovação (não vai pro rollout); aparece como "rodando".
+// Codex status = last turn event in the rollout.
+// ponytail: doesn't detect approval requests (they don't go to the rollout); shows as "running".
 export function codexStatus(log: string, mtimeMs: number, now = Date.now()): Status {
   const started = log.lastIndexOf('"type":"task_started"'), done = log.lastIndexOf('"type":"task_complete"');
   if (started !== -1 || done !== -1) return started > done ? 'busy' : 'idle';
-  return now - mtimeMs < 30_000 ? 'busy' : 'idle'; // turno longo empurrou os eventos pra fora do tail
+  return now - mtimeMs < 30_000 ? 'busy' : 'idle'; // a long turn pushed the events out of the tail
 }
 
-// ~/.codex/sessions/AAAA/MM/DD/rollout-*.jsonl, do dia mais novo pro mais velho.
+// ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl, newest day first.
 function* rolloutFiles() {
   const root = home('.codex', 'sessions');
   const desc = (d: string) => { try { return fs.readdirSync(d).sort().reverse(); } catch { return []; } };
@@ -121,7 +121,7 @@ function codex(): Session[] {
   for (const r of readJsonl(home('.codex', 'history.jsonl'))) if (!prompts.has(r.session_id)) prompts.set(r.session_id, r.text);
   return live.flatMap((id) => {
     const file = codexRollout(id), meta = file && firstLine(file)?.payload;
-    if (!file || !meta || meta.parent_thread_id || meta.source?.subagent) return []; // ignora subagentes (guardian etc.)
+    if (!file || !meta || meta.parent_thread_id || meta.source?.subagent) return []; // skip subagents (guardian etc.)
     const log = tail(file);
     return [{
       agent: 'codex', id, cwd: meta.cwd, title: names.get(id) ?? prompts.get(id) ?? '',
@@ -149,16 +149,16 @@ function agy(): Session[] {
 
 export const liveSessions = (): Session[] => [...claude(), ...codex(), ...agy()];
 
-// ── Limites de uso do plano: os mesmos números reais que o Trayce mostra ──
+// ── Plan usage limits: the same real numbers Trayce shows ──
 export interface Limit { label: string; pct: number; resetsAt?: number }
 const WEEK = 7 * 86_400_000;
 
-// Leitura de antes do reset não diz nada da janela nova: ela está zerada.
+// A reading from before the reset says nothing about the new window: it's at zero.
 const limit = (label: string, pct: number, resetsAt: number | undefined, now: number): Limit =>
   resetsAt && resetsAt <= now ? { label, pct: 0 } : { label, pct: Math.round(pct), resetsAt };
 const secs = (s: unknown) => (typeof s === 'number' && s > 0 ? s * 1000 : undefined);
 
-// Codex grava o rate_limits do servidor em todo evento token_count do rollout.
+// Codex writes the server's rate_limits on every token_count event in the rollout.
 export const codexLimits = (rl: any, now = Date.now()): Limit[] =>
   ['primary', 'secondary'].flatMap((k) => {
     const w = rl?.[k], m = w?.window_minutes;
@@ -166,17 +166,17 @@ export const codexLimits = (rl: any, now = Date.now()): Limit[] =>
     return [limit(m === 10080 ? '7d' : m % 1440 === 0 ? `${m / 1440}d` : m % 60 === 0 ? `${m / 60}h` : `${m}m`, w.used_percent, secs(w.resets_at), now)];
   });
 
-// Snapshot do status line do Claude, gravado pelo Trayce (trayce --setup-claude).
+// Snapshot of Claude's status line, saved by Trayce (trayce --setup-claude).
 export function claudeLimits(snap: any, now = Date.now()): Limit[] {
   if (!snap?.rate_limits || !(now - Date.parse(snap.seen_at) <= WEEK)) return [];
   return ([['five_hour', '5h'], ['seven_day', '7d']] as const).flatMap(([k, label]) => {
     const w = snap.rate_limits[k], p = w?.used_percentage;
-    // o Claude Code já mandou um epoch nesse campo
+    // Claude Code has sent an epoch in this field before
     return typeof p === 'number' && p >= 0 && p <= 1000 ? [limit(label, p, secs(w.resets_at), now)] : [];
   });
 }
 
-// Cota do app desktop do Antigravity, guardada pelo Trayce. Só o primeiro grupo (Gemini), como no Trayce.
+// Antigravity desktop app quota, saved by Trayce. Only the first group (Gemini), as in Trayce.
 export function agyLimits(cache: any, now = Date.now()): Limit[] {
   const buckets: any[] = Array.isArray(cache?.buckets) ? cache.buckets : [];
   return buckets.filter((b) => b.group === buckets[0].group && typeof b.remaining_fraction === 'number').map((b) =>
@@ -184,13 +184,13 @@ export function agyLimits(cache: any, now = Date.now()): Limit[] {
       (1 - Math.min(1, Math.max(0, b.remaining_fraction))) * 100, b.reset_time ? Date.parse(b.reset_time) : undefined, now));
 }
 
-// Mesmo lugar que o dirs::data_dir() do Trayce.
+// Same place as Trayce's dirs::data_dir().
 const trayce = (file: string) => path.join(
   process.platform === 'win32' ? process.env.APPDATA ?? home('AppData', 'Roaming')
   : process.platform === 'darwin' ? home('Library', 'Application Support')
   : process.env.XDG_DATA_HOME ?? home('.local', 'share'), 'trayce', file);
 
-// Rollout mais recentemente escrito que tenha um snapshot (retomar sessão antiga escreve no arquivo antigo).
+// Most recently written rollout that has a snapshot (resuming an old session writes to the old file).
 function codexUsage(now: number): Limit[] {
   const files = [...rolloutFiles()].flatMap((f) => { try { return [{ f, t: fs.statSync(f).mtimeMs }]; } catch { return []; } })
     .filter((x) => now - x.t < WEEK).sort((a, b) => b.t - a.t);
@@ -210,7 +210,7 @@ export const usage = (now = Date.now()): Record<Agent, Limit[]> => ({
 export const samePath = (a: string, b: string) =>
   process.platform === 'win32' ? path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase() : path.resolve(a) === path.resolve(b);
 
-// Diretórios onde algum agente já foi usado (sugestões para nova sessão).
+// Directories where some agent has been used (suggestions for a new session).
 export function knownDirs(): string[] {
   const toml = (() => { try { return fs.readFileSync(home('.codex', 'config.toml'), 'utf8'); } catch { return ''; } })();
   const all: string[] = [
