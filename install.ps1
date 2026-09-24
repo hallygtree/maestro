@@ -16,8 +16,12 @@ try {
   # Windows' own tar: Git's GNU tar, if first on PATH, reads "C:\..." as a remote host
   & "$env:SystemRoot\System32\tar.exe" -xzf "$tmp\maestro.tar.gz" -C $tmp
   if ($LASTEXITCODE) { throw "Couldn't extract $url" }
+  # A running Maestro's files can't be deleted, but the folder can be moved aside whole,
+  # so an open Maestro never leaves a half-deleted install. Old copies go once nothing holds them.
+  Get-ChildItem (Split-Path $dir) -Directory -Filter 'maestro.old-*' -ErrorAction SilentlyContinue |
+    ForEach-Object { Remove-Item -Recurse -Force $_.FullName -ErrorAction SilentlyContinue }
   if (Test-Path $dir) {
-    try { Remove-Item -Recurse -Force $dir }
+    try { Rename-Item $dir ('maestro.old-' + [guid]::NewGuid()) }
     catch { throw "Couldn't replace $dir. Close Maestro and run the installer again." }
   }
   New-Item -ItemType Directory -Force (Split-Path $dir) | Out-Null
