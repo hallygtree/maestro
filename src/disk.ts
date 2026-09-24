@@ -98,15 +98,18 @@ export function codexStatus(log: string, mtimeMs: number, now = Date.now()): Sta
   return now - mtimeMs < 30_000 ? 'busy' : 'idle'; // turno longo empurrou os eventos pra fora do tail
 }
 
+// ~/.codex/sessions/AAAA/MM/DD/rollout-*.jsonl, do dia mais novo pro mais velho.
+function* rolloutFiles() {
+  const root = home('.codex', 'sessions');
+  const desc = (d: string) => { try { return fs.readdirSync(d).sort().reverse(); } catch { return []; } };
+  for (const y of desc(root)) for (const m of desc(path.join(root, y))) for (const d of desc(path.join(root, y, m)))
+    for (const f of desc(path.join(root, y, m, d))) if (f.endsWith('.jsonl')) yield path.join(root, y, m, d, f);
+}
+
 const rollouts = new Map<string, string>();
 function codexRollout(id: string): string | undefined {
   if (rollouts.has(id)) return rollouts.get(id);
-  const root = home('.codex', 'sessions');
-  const desc = (d: string) => { try { return fs.readdirSync(d).sort().reverse(); } catch { return []; } };
-  for (const y of desc(root)) for (const m of desc(path.join(root, y))) for (const d of desc(path.join(root, y, m))) {
-    const f = desc(path.join(root, y, m, d)).find((f) => f.endsWith(id + '.jsonl'));
-    if (f) { rollouts.set(id, path.join(root, y, m, d, f)); return rollouts.get(id); }
-  }
+  for (const f of rolloutFiles()) if (f.endsWith(id + '.jsonl')) { rollouts.set(id, f); return f; }
 }
 
 function codex(): Session[] {
@@ -145,6 +148,64 @@ function agy(): Session[] {
 }
 
 export const liveSessions = (): Session[] => [...claude(), ...codex(), ...agy()];
+
+// ── Limites de uso do plano: os mesmos números reais que o Trayce mostra ──
+export interface Limit { label: string; pct: number; resetsAt?: number }
+const WEEK = 7 * 86_400_000;
+
+// Leitura de antes do reset não diz nada da janela nova: ela está zerada.
+const limit = (label: string, pct: number, resetsAt: number | undefined, now: number): Limit =>
+  resetsAt && resetsAt <= now ? { label, pct: 0 } : { label, pct: Math.round(pct), resetsAt };
+const secs = (s: unknown) => (typeof s === 'number' && s > 0 ? s * 1000 : undefined);
+
+// Codex grava o rate_limits do servidor em todo evento token_count do rollout.
+export const codexLimits = (rl: any, now = Date.now()): Limit[] =>
+  ['primary', 'secondary'].flatMap((k) => {
+    const w = rl?.[k], m = w?.window_minutes;
+    if (typeof w?.used_percent !== 'number' || !m) return [];
+    return [limit(m === 10080 ? '7d' : m % 1440 === 0 ? `${m / 1440}d` : m % 60 === 0 ? `${m / 60}h` : `${m}m`, w.used_percent, secs(w.resets_at), now)];
+  });
+
+// Snapshot do status line do Claude, gravado pelo Trayce (trayce --setup-claude).
+export function claudeLimits(snap: any, now = Date.now()): Limit[] {
+  if (!snap?.rate_limits || !(now - Date.parse(snap.seen_at) <= WEEK)) return [];
+  return ([['five_hour', '5h'], ['seven_day', '7d']] as const).flatMap(([k, label]) => {
+    const w = snap.rate_limits[k], p = w?.used_percentage;
+    // o Claude Code já mandou um epoch nesse campo
+    return typeof p === 'number' && p >= 0 && p <= 1000 ? [limit(label, p, secs(w.resets_at), now)] : [];
+  });
+}
+
+// Cota do app desktop do Antigravity, guardada pelo Trayce. Só o primeiro grupo (Gemini), como no Trayce.
+export function agyLimits(cache: any, now = Date.now()): Limit[] {
+  const buckets: any[] = Array.isArray(cache?.buckets) ? cache.buckets : [];
+  return buckets.filter((b) => b.group === buckets[0].group && typeof b.remaining_fraction === 'number').map((b) =>
+    limit(/7d/.test(b.label) ? '7d' : /5h/.test(b.label) ? '5h' : b.label,
+      (1 - Math.min(1, Math.max(0, b.remaining_fraction))) * 100, b.reset_time ? Date.parse(b.reset_time) : undefined, now));
+}
+
+// Mesmo lugar que o dirs::data_dir() do Trayce.
+const trayce = (file: string) => path.join(
+  process.platform === 'win32' ? process.env.APPDATA ?? home('AppData', 'Roaming')
+  : process.platform === 'darwin' ? home('Library', 'Application Support')
+  : process.env.XDG_DATA_HOME ?? home('.local', 'share'), 'trayce', file);
+
+// Rollout mais recentemente escrito que tenha um snapshot (retomar sessão antiga escreve no arquivo antigo).
+function codexUsage(now: number): Limit[] {
+  const files = [...rolloutFiles()].flatMap((f) => { try { return [{ f, t: fs.statSync(f).mtimeMs }]; } catch { return []; } })
+    .filter((x) => now - x.t < WEEK).sort((a, b) => b.t - a.t);
+  for (const { f } of files) {
+    const line = tail(f).split('\n').reverse().find((l) => l.includes('"rate_limits"') && l.includes('"primary"'));
+    try { if (line) return codexLimits(JSON.parse(line).payload.rate_limits, now); } catch {}
+  }
+  return [];
+}
+
+export const usage = (now = Date.now()): Record<Agent, Limit[]> => ({
+  claude: claudeLimits(readJson(trayce('claude_rate_limits.json')), now),
+  codex: codexUsage(now),
+  agy: agyLimits(readJson(trayce('antigravity_quota.json')), now),
+});
 
 export const samePath = (a: string, b: string) =>
   process.platform === 'win32' ? path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase() : path.resolve(a) === path.resolve(b);

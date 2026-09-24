@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import React, { useEffect, useState } from 'react';
 import { Box, Text, render, useApp, useInput, useWindowSize } from 'ink';
-import { knownDirs, liveSessions, samePath, type Agent, type Session } from './disk.ts';
+import { knownDirs, liveSessions, samePath, usage, type Agent, type Session } from './disk.ts';
 import { MODES, attach, inkInput, killAll, managed, onManagedExit, send, spawn, startInput, type Managed } from './pty.ts';
 
 const h = React.createElement;
@@ -25,6 +25,17 @@ const STATUS = {
   waiting: { glyph: '◐', label: 'esperando você', color: 'red' },
   idle: { glyph: '✓', label: 'concluído', color: 'green' },
 } as const;
+const NO_USAGE: Record<Agent, string> = {
+  claude: 'rode trayce --setup-claude para ver o uso do Claude',
+  codex: 'sem uso do Codex nos últimos 7 dias',
+  agy: 'abra o app desktop do Antigravity com o Trayce rodando para ver a cota',
+};
+const pctColor = (p: number) => (p >= 80 ? 'red' : p >= 50 ? 'yellow' : 'green');
+const bar = (p: number) => '▓'.repeat(Math.round(Math.min(100, p) / 10)).padEnd(10, '░');
+const resetAt = (t: number) => {
+  const d = new Date(t), hm = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  return d.toDateString() === new Date().toDateString() ? hm : `${d.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '')} ${hm}`;
+};
 
 const short = (p: string) => (p.toLowerCase().startsWith(os.homedir().toLowerCase()) ? '~' + p.slice(os.homedir().length) : p);
 const name = (r: Row) => r.title || short(r.cwd);
@@ -46,6 +57,7 @@ export function merge(disk: Session[], mine: Managed[]): Row[] {
 // Estado que sobrevive quando o painel sai da tela para você entrar numa sessão.
 const store = {
   tab: 0, sel: 0, input: '', notice: '', quitArmed: false,
+  usage: usage(),
   mode: {} as Partial<Record<Agent, number>>, // último modo escolhido por agente
   focus: undefined as Managed | undefined, // sessão de onde você acabou de voltar
   pending: undefined as undefined | { row: Row; prompt: string; misses: number },
@@ -89,7 +101,10 @@ function App({ onAttach }: { onAttach: (m: Managed) => void }) {
     refresh();
     onManagedExit(refresh);
     const t = setInterval(refresh, 1500);
-    return () => clearInterval(t);
+    const readUsage = () => { store.usage = usage(); redraw(); };
+    readUsage();
+    const u = setInterval(readUsage, 30_000);
+    return () => { clearInterval(t); clearInterval(u); };
   }, []);
 
   const tabAgent = store.tab ? AGENTS[store.tab - 1] : undefined;
@@ -211,7 +226,7 @@ function App({ onAttach }: { onAttach: (m: Managed) => void }) {
   const counts = AGENTS.map((a) => all.filter((r) => r.agent === a).length);
   const busy = all.filter((r) => r.status === 'busy').length, waiting = all.filter((r) => r.status === 'waiting').length;
   const tabs = ['Todos', ...AGENTS.map((a) => LABEL[a])];
-  const listHeight = Math.max(3, height - 12);
+  const listHeight = Math.max(3, height - 13);
   const start = Math.max(0, store.sel - listHeight + 1);
   const off = Math.max(0, cursor - listHeight + 3);
 
@@ -225,6 +240,19 @@ function App({ onAttach }: { onAttach: (m: Managed) => void }) {
       h(Text, { dimColor: true }, `${busy} rodando · `),
       h(Text, { color: waiting ? 'red' : 'gray', bold: waiting > 0 }, `${waiting} esperando você`)),
   );
+
+  // Aba de agente: barras e horário de reset. Aba Todos: só os percentuais dos três.
+  const limits = (a: Agent, full: boolean) => store.usage[a].length
+    ? store.usage[a].flatMap((l, i) => [
+        i ? h(Text, { key: 's' + i, dimColor: true }, '  ·  ') : null,
+        h(Text, { key: 'l' + i }, l.label + ' '),
+        h(Text, { key: 'p' + i, color: pctColor(l.pct) }, `${l.pct}%` + (full ? ` ${bar(l.pct)}` : '')),
+        full && l.resetsAt ? h(Text, { key: 'r' + i, dimColor: true }, ` reseta ${resetAt(l.resetsAt)}`) : null,
+      ])
+    : [h(Text, { key: 'none', dimColor: true }, full ? NO_USAGE[a] : '—')];
+  const usageLine = h(Box, { paddingX: 1, gap: 3, height: 1 }, tabAgent
+    ? h(Text, { wrap: 'truncate-end' }, limits(tabAgent, true))
+    : AGENTS.map((a) => h(Text, { key: a, wrap: 'truncate-end' }, h(Text, { color: COLOR[a] }, LABEL[a] + ' '), limits(a, false))));
 
   const rowLine = (r: Row, i: number) => {
     const on = i === store.sel, st = STATUS[r.status];
@@ -284,7 +312,7 @@ function App({ onAttach }: { onAttach: (m: Managed) => void }) {
     : 'Tab abas · ↑↓ sessão · Enter entrar/enviar · Ctrl+Q/F12 volta da sessão · Ctrl+N nova sessão · Esc limpar · Ctrl+C sair   ◆ Maestro ◇ externa';
 
   return h(Box, { flexDirection: 'column', height },
-    header, body, detail,
+    header, usageLine, body, detail,
     h(Box, { paddingX: 1, height: 1 }, h(Text, { color: 'yellow', wrap: 'truncate-end' }, store.notice)),
     input,
     h(Box, { paddingX: 1 }, h(Text, { dimColor: true, wrap: 'truncate-end' }, hints)),
