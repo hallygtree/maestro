@@ -61,6 +61,12 @@ function App({ onAttach }: { onAttach: (m: Managed) => void }) {
   const redraw = () => force((n) => n + 1);
   const note = (s: string) => { store.notice = s; redraw(); };
 
+  // Abrir um agente pode falhar (ex.: o executável sumiu no meio de uma atualização). Isso não pode derrubar o painel.
+  const open = (agent: Agent, cwd: string, opts: Parameters<typeof spawn>[2]) => {
+    try { return spawn(agent, cwd, opts); }
+    catch (e: any) { note(`Não consegui abrir ${LABEL[agent]}: ${e.message}`); }
+  };
+
   const refresh = () => {
     const list = merge(liveSessions(), managed);
     const p = store.pending;
@@ -68,10 +74,12 @@ function App({ onAttach }: { onAttach: (m: Managed) => void }) {
     if (p) p.misses = gone ? p.misses + 1 : 0;
     // duas leituras seguidas sem ela: uma só pode ser o arquivo de status no meio de uma regravação
     if (p && p.misses >= 2) {
-      store.pending = undefined;
-      spawn(p.row.agent, p.row.cwd, { resumeId: p.row.id, prompt: p.prompt || undefined });
-      store.notice = `Retomada aqui: ${LABEL[p.row.agent]} · ${name(p.row)}`;
-      return setAll(merge(liveSessions(), managed));
+      if (open(p.row.agent, p.row.cwd, { resumeId: p.row.id, prompt: p.prompt || undefined })) {
+        store.pending = undefined;
+        store.notice = `Retomada aqui: ${LABEL[p.row.agent]} · ${name(p.row)}`;
+        return setAll(merge(liveSessions(), managed));
+      }
+      store.notice += ' Tento de novo em instantes. Esc cancela.'; // a sessão já foi fechada lá: não dá pra perder a retomada
     }
     setAll(list);
   };
@@ -108,9 +116,10 @@ function App({ onAttach }: { onAttach: (m: Managed) => void }) {
   const create = (agent: Agent, raw: string) => {
     const dir = path.resolve(raw);
     const before = new Set(all.map((r) => r.id));
-    const m = spawn(agent, dir, { prompt: prompt || undefined });
-    m.preexisting = before;
+    const m = open(agent, dir, { prompt: prompt || undefined });
     go(undefined);
+    if (!m) return;
+    m.preexisting = before;
     if (!prompt) return onAttach(m); // sessão vazia: você quer usá-la agora
     note(`Nova sessão ${LABEL[agent]} em ${short(dir)} recebeu o prompt.`);
     refresh();
