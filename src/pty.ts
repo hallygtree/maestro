@@ -36,11 +36,35 @@ function resolve(name: string): [string, string[]] {
   return [name, []];
 }
 
-function args(agent: Agent, resumeId?: string, prompt?: string): string[] {
-  const p = prompt ? [prompt] : [];
+// Modos que cada CLI aceita na inicialização. Só entra o que o agente suporta; o primeiro é sempre a config dele.
+export const MODES: Record<Agent, { label: string; args: string[] }[]> = {
+  claude: [
+    { label: 'Padrão (config do agente)', args: [] },
+    { label: 'Manual', args: ['--permission-mode', 'manual'] },
+    { label: 'Aceitar edições', args: ['--permission-mode', 'acceptEdits'] },
+    { label: 'Plan', args: ['--permission-mode', 'plan'] },
+    { label: 'Auto', args: ['--permission-mode', 'auto'] },
+    { label: 'Sem permissões', args: ['--permission-mode', 'bypassPermissions'] },
+  ],
+  codex: [
+    { label: 'Padrão (config do agente)', args: [] },
+    { label: 'Somente leitura', args: ['-s', 'read-only'] },
+    { label: 'Auto', args: ['--approve-for-me'] },
+    { label: 'Sem permissões', args: ['--dangerously-bypass-approvals-and-sandbox'] },
+  ],
+  agy: [
+    { label: 'Padrão (config do agente)', args: [] },
+    { label: 'Aceitar edições', args: ['--mode', 'accept-edits'] },
+    { label: 'Plan', args: ['--mode', 'plan'] },
+    { label: 'Sem permissões', args: ['--dangerously-skip-permissions'] },
+  ],
+};
+
+export function args(agent: Agent, resumeId?: string, prompt?: string, mode: string[] = []): string[] {
+  const p = [...mode, ...(prompt ? [prompt] : [])];
   if (agent === 'claude') return resumeId ? ['--resume', resumeId, ...p] : p;
   if (agent === 'codex') return resumeId ? ['resume', resumeId, ...p] : p;
-  return [...(resumeId ? ['--conversation', resumeId] : []), ...(prompt ? ['-i', prompt] : [])];
+  return [...(resumeId ? ['--conversation', resumeId] : []), ...mode, ...(prompt ? ['-i', prompt] : [])];
 }
 
 // Marcadores que um Claude pai injeta. Herdados, fazem o agente filho se achar subsessão e não salvar transcript.
@@ -59,9 +83,9 @@ const HINT = 'Ctrl+Q ou F12 volta ao Maestro';
 const withHint = (d: string) =>
   d.replace(/\x1b\]([02]);([^\x07\x1b]*)(\x07|\x1b\\)/g, (_, n, t, end) => `\x1b]${n};${t} · ${HINT}${end}`);
 
-export function spawn(agent: Agent, cwd: string, opts: { resumeId?: string; prompt?: string } = {}): Managed {
+export function spawn(agent: Agent, cwd: string, opts: { resumeId?: string; prompt?: string; mode?: string[] } = {}): Managed {
   const [file, pre] = resolve(agent);
-  const a = args(agent, opts.resumeId, opts.prompt);
+  const a = args(agent, opts.resumeId, opts.prompt, opts.mode);
   let id = opts.resumeId;
   if (agent === 'claude' && !id) a.unshift('--session-id', (id = randomUUID())); // id conhecido desde o início
   const proc = pty.spawn(file, [...pre, ...a], {

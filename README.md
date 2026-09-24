@@ -107,7 +107,7 @@ interactive TTY and exits with a message otherwise.
 | type, then `Enter` | Send the prompt (see [Sending a prompt](#sending-a-prompt)) |
 | `Enter` with an empty prompt | Enter the selected `◆` session full screen. On a `◇` session, resume it here once you close it ([why](#sessions-opened-elsewhere)) |
 | `Ctrl+Q` or `F12` | Leave a session and go back to the dashboard. Use F12 in the VS Code terminal, which keeps Ctrl+Q for itself |
-| `Ctrl+N` | Start a new, empty session: pick the tool, then the directory |
+| `Ctrl+N` | Start a new, empty session: pick the tool, the directory, then the mode |
 | `Esc` | Clear the prompt, close a picker, or cancel a pending resume |
 | `Ctrl+C` | Quit. Asks again first if it would close sessions Maestro opened |
 
@@ -124,6 +124,11 @@ time you enter one the hint also shows on screen for a moment.
 4. For a new session, **pick the directory.** The folder you started Maestro
    from comes first, then every folder where Claude Code, Codex or Antigravity
    has already run, then **✎ Outro caminho…** (another path) to type one.
+5. For a new session, **pick the mode** it starts in. Each tool lists only the
+   modes its CLI accepts at launch: Claude Code has manual, accept edits, plan,
+   auto and bypass; Codex has read-only, auto and bypass; Antigravity has
+   accept edits, plan and bypass. The first option passes no flag, so the
+   tool's own config decides. Maestro remembers the last mode per tool.
 
 What happens next depends on the session:
 

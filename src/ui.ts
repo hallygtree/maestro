@@ -4,7 +4,7 @@ import path from 'node:path';
 import React, { useEffect, useState } from 'react';
 import { Box, Text, render, useApp, useInput, useWindowSize } from 'ink';
 import { knownDirs, liveSessions, samePath, type Agent, type Session } from './disk.ts';
-import { attach, inkInput, killAll, managed, onManagedExit, send, spawn, startInput, type Managed } from './pty.ts';
+import { MODES, attach, inkInput, killAll, managed, onManagedExit, send, spawn, startInput, type Managed } from './pty.ts';
 
 const h = React.createElement;
 
@@ -13,7 +13,8 @@ type Step =
   | { kind: 'agent' }
   | { kind: 'target'; agent: Agent }
   | { kind: 'dir'; agent: Agent }
-  | { kind: 'path'; agent: Agent };
+  | { kind: 'path'; agent: Agent }
+  | { kind: 'mode'; agent: Agent; dir: string };
 type Item = { label: string; value: any; color?: string };
 
 const AGENTS: Agent[] = ['claude', 'codex', 'agy'];
@@ -45,6 +46,7 @@ export function merge(disk: Session[], mine: Managed[]): Row[] {
 // Estado que sobrevive quando o painel sai da tela para você entrar numa sessão.
 const store = {
   tab: 0, sel: 0, input: '', notice: '', quitArmed: false,
+  mode: {} as Partial<Record<Agent, number>>, // último modo escolhido por agente
   focus: undefined as Managed | undefined, // sessão de onde você acabou de voltar
   pending: undefined as undefined | { row: Row; prompt: string; misses: number },
 };
@@ -110,14 +112,20 @@ function App({ onAttach }: { onAttach: (m: Managed) => void }) {
         ...knownDirs().filter((d) => !samePath(d, process.cwd())).map((d) => ({ label: short(d), value: d })),
         { label: '✎ Outro caminho…', value: 'other', color: 'cyan' },
       ]
+    : step?.kind === 'mode' ? MODES[step.agent].map((m, i) => ({ label: m.label, value: i, color: m.label === 'Sem permissões' ? 'red' : undefined }))
     : [];
 
   const go = (s: Step | undefined) => { setStep(s); setCursor(0); };
 
   const create = (agent: Agent, raw: string) => {
-    const dir = path.resolve(raw);
+    setStep({ kind: 'mode', agent, dir: path.resolve(raw) });
+    setCursor(store.mode[agent] ?? 0);
+  };
+
+  const launch = (agent: Agent, dir: string, mode: number) => {
+    store.mode[agent] = mode;
     const before = new Set(all.map((r) => r.id));
-    const m = open(agent, dir, { prompt: prompt || undefined });
+    const m = open(agent, dir, { prompt: prompt || undefined, mode: MODES[agent][mode].args });
     go(undefined);
     if (!m) return;
     m.preexisting = before;
@@ -138,6 +146,7 @@ function App({ onAttach }: { onAttach: (m: Managed) => void }) {
     if (step?.kind === 'agent') return go(prompt ? { kind: 'target', agent: v } : { kind: 'dir', agent: v });
     if (step?.kind === 'target') return v === 'new' ? go({ kind: 'dir', agent: step.agent }) : deliver(v, prompt);
     if (step?.kind === 'dir') return v === 'other' ? (setDirText(''), go({ kind: 'path', agent: step.agent })) : create(step.agent, v);
+    if (step?.kind === 'mode') return launch(step.agent, step.dir, v);
   };
 
   const startDispatch = (text: string) => {
@@ -237,6 +246,7 @@ function App({ onAttach }: { onAttach: (m: Managed) => void }) {
       target: `Qual sessão de ${LABEL[(step as any).agent as Agent]}?`,
       dir: `Em qual diretório abrir ${LABEL[(step as any).agent as Agent]}?`,
       path: 'Caminho do diretório:',
+      mode: `Em qual modo abrir ${LABEL[(step as any).agent as Agent]}?`,
     }[step.kind]),
     step.kind === 'path'
       ? h(Text, null, h(Text, { color: 'cyan' }, '› '), dirText, h(Text, { inverse: true }, ' '))

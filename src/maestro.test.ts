@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { codexStatus, type Session } from './disk.ts';
-import { isDetachKey, shimTarget, type Managed } from './pty.ts';
+import { MODES, args, isDetachKey, shimTarget, type Managed } from './pty.ts';
 import { merge } from './ui.ts';
 
 test('status do Codex vem do último evento de turno', () => {
@@ -63,4 +63,12 @@ test('merge casa sessões gerenciadas sem roubar as que já existiam', () => {
   rows = merge([{ ...s('abc'), agent: 'claude' }], [known]);
   assert.equal(rows.length, 1);
   assert.equal(rows[0].m, known);
+});
+
+test('cada agente oferece só os modos que suporta, e o primeiro não passa flag', () => {
+  for (const list of Object.values(MODES)) assert.deepEqual(list[0].args, []);
+  assert.ok(!MODES.codex.some((m) => m.label === 'Plan')); // o Codex não tem plan por flag
+  assert.deepEqual(args('claude', undefined, 'oi', ['--permission-mode', 'plan']), ['--permission-mode', 'plan', 'oi']);
+  assert.deepEqual(args('codex', undefined, 'oi', ['-s', 'read-only']), ['-s', 'read-only', 'oi']);
+  assert.deepEqual(args('agy', undefined, 'oi', ['--mode', 'plan']), ['--mode', 'plan', '-i', 'oi']);
 });
