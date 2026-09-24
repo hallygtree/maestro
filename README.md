@@ -104,8 +104,8 @@ message otherwise.
 ╭──────────────────────────────────────────────────────────────────────────────────────────────╮
 │ › Write a prompt and press Enter to pick the agent…                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
- Tab tabs · ↑↓ session · ←→ cursor · Enter open/send · Ctrl+Q/F12 leave session · Ctrl+N new session
- Ctrl+R history · Ctrl+O resume · Esc clear · Ctrl+C quit · ◆ Maestro ◇ external
+ Tab tabs · ↑↓ session · ←→ cursor · Enter open/send · Ctrl+Q/F12 leave session · Ctrl+W close session
+ Ctrl+N new session · Ctrl+R history · Ctrl+O resume · Esc clear · Ctrl+C quit · ◆ Maestro ◇ external
 ```
 
 | Mark | Meaning |
@@ -124,6 +124,7 @@ message otherwise.
 | `←` `→` `Home` `End` | Move the cursor in the prompt box. `Backspace` and `Delete` edit at the cursor |
 | `Enter` with an empty prompt | Enter the selected `◆` session full screen. On a `◇` session, resume it here once you close it ([why](#sessions-opened-elsewhere)) |
 | `Ctrl+Q` or `F12` | Leave a session and go back to the dashboard. Use F12 in the VS Code terminal, which keeps Ctrl+Q for itself |
+| `Ctrl+W` | Close the selected `◆` session (press twice to confirm). It can be reopened with `Ctrl+O` |
 | `Ctrl+N` | Start a new, empty session: pick the tool, the directory, then the mode |
 | `Ctrl+R` | Pick one of your last 50 prompts and put it back in the prompt box, to send it again (say, after picking the wrong directory). Kept in `~/.maestro/history.json` |
 | `Ctrl+O` | Resume a session Maestro opened before, in the same mode, for example after closing Maestro. One option resumes all the sessions that were open when it closed. Kept in `~/.maestro/sessions.json` (last 20) |

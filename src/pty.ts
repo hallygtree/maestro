@@ -193,11 +193,10 @@ export function attach(m: Managed): Promise<void> {
 }
 
 // On Windows node-pty's kill() sometimes prints "AttachConsole failed" over the screen; taskkill /T takes the tree down quietly.
-export const killAll = () => {
-  for (const m of [...managed]) {
-    try {
-      if (WIN) execFileSync('taskkill', ['/T', '/F', '/PID', String(m.proc.pid)], { stdio: 'ignore' });
-      else m.proc.kill();
-    } catch {} // already exited
-  }
+export const kill = (m: Managed) => {
+  try {
+    if (WIN) execFileSync('taskkill', ['/T', '/F', '/PID', String(m.proc.pid)], { stdio: 'ignore' });
+    else m.proc.kill();
+  } catch {} // already exited
 };
+export const killAll = () => { for (const m of [...managed]) kill(m); };

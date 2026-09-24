@@ -4,7 +4,7 @@ import path from 'node:path';
 import React, { useEffect, useState } from 'react';
 import { Box, Text, render, useApp, useInput, useWindowSize, type Key } from 'ink';
 import { knownDirs, liveSessions, samePath, usage, type Agent, type Session } from './disk.ts';
-import { MODES, attach, inkInput, killAll, managed, onManagedExit, send, spawn, startInput, type Managed } from './pty.ts';
+import { MODES, attach, inkInput, kill, killAll, managed, onManagedExit, send, spawn, startInput, type Managed } from './pty.ts';
 
 const h = React.createElement;
 
@@ -127,6 +127,7 @@ function field(t: string, pos: number, w: number, max: number) {
 // State that survives while the dashboard is off screen because you went into a session.
 const store = {
   tab: 0, sel: 0, input: '', pos: 0, quitArmed: false,
+  closeArmed: undefined as Managed | undefined, // Ctrl+W pressed once on this session
   history: load(HISTORY) as string[],
   recent: load(RECENT) as Recent[],
   notice: fs.existsSync(RECENT) ? 'Ctrl+O resumes the sessions you had open in Maestro.' : '',
@@ -278,6 +279,8 @@ function App({ onAttach }: { onAttach: (m: Managed) => void }) {
       return exit();
     }
     store.quitArmed = false;
+    const closeArmed = store.closeArmed;
+    store.closeArmed = undefined;
 
     if (step?.kind === 'path') {
       if (key.escape) return go(undefined);
@@ -304,6 +307,16 @@ function App({ onAttach }: { onAttach: (m: Managed) => void }) {
     if (key.tab) { store.tab = (store.tab + (key.shift ? 3 : 1)) % 4; store.sel = 0; return redraw(); }
     if (key.upArrow) { store.sel = Math.max(0, store.sel - 1); return redraw(); }
     if (key.downArrow) { store.sel = Math.min(shown.length - 1, store.sel + 1); return redraw(); }
+    if (key.ctrl && input === 'w') {
+      if (!selected) return;
+      if (!selected.m) return note(`"${name(selected)}" is open in another terminal. Close it there.`);
+      if (closeArmed !== selected.m) {
+        store.closeArmed = selected.m;
+        return note(`Close "${name(selected)}"? Press Ctrl+W again to confirm.`);
+      }
+      kill(selected.m);
+      return note(`Closed ${LABEL[selected.agent]} · ${name(selected)}.${selected.id ? ' Ctrl+O resumes it.' : ''}`);
+    }
     if (key.ctrl && input === 'n') return startDispatch('');
     if (key.ctrl && input === 'r') {
       if (!store.history.length) return note('No prompts in history yet.');
@@ -335,7 +348,7 @@ function App({ onAttach }: { onAttach: (m: Managed) => void }) {
   const inputRows = store.input ? Math.min(wrap(store.input + ' ', fieldW).length, fieldMax) : 1;
   const hints = pack(step
     ? [...(step.kind === 'path' ? ['←→ cursor'] : ['↑↓ choose']), 'Enter confirm', 'Esc cancel']
-    : ['Tab tabs', '↑↓ session', '←→ cursor', 'Enter open/send', 'Ctrl+Q/F12 leave session', 'Ctrl+N new session',
+    : ['Tab tabs', '↑↓ session', '←→ cursor', 'Enter open/send', 'Ctrl+Q/F12 leave session', 'Ctrl+W close session', 'Ctrl+N new session',
       'Ctrl+R history', 'Ctrl+O resume', 'Esc clear', 'Ctrl+C quit', '◆ Maestro ◇ external'], Math.max(1, columns - 2));
   // 10 = header, list border, detail (3), notice, prompt border, one spare row
   const listHeight = Math.max(3, height - 10 - (tabAgent ? 1 : 0) - inputRows - hints.length);
