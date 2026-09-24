@@ -14,7 +14,9 @@ type Step =
   | { kind: 'target'; agent: Agent }
   | { kind: 'dir'; agent: Agent }
   | { kind: 'path'; agent: Agent }
-  | { kind: 'mode'; agent: Agent; dir: string };
+  | { kind: 'mode'; agent: Agent; dir: string }
+  | { kind: 'history' }
+  | { kind: 'recent' };
 type Item = { label: string; value: any; color?: string };
 
 const AGENTS: Agent[] = ['claude', 'codex', 'agy'];
@@ -54,9 +56,34 @@ export function merge(disk: Session[], mine: Managed[]): Row[] {
   return out;
 }
 
+// O que o Maestro guarda entre execuções. Sem disco, só não sobrevive ao fechar.
+const DATA = path.join(os.homedir(), '.maestro');
+const HISTORY = path.join(DATA, 'history.json'), RECENT = path.join(DATA, 'sessions.json');
+const load = (file: string): any[] => {
+  try { const l = JSON.parse(fs.readFileSync(file, 'utf8')); return Array.isArray(l) ? l : []; } catch { return []; }
+};
+const save = (file: string, list: unknown[]) => {
+  try { fs.mkdirSync(DATA, { recursive: true }); fs.writeFileSync(file, JSON.stringify(list)); } catch {}
+};
+
+// Prompts já enviados, do mais recente pro mais velho (Ctrl+R), para refazer sem redigitar.
+export const remember = (list: string[], t: string) => [t, ...list.filter((p) => p !== t)].slice(0, 50);
+
+// Sessões abertas pelo Maestro (Ctrl+O), para retomar depois de fechá-lo. seen = último minuto em que estava viva.
+export interface Recent { agent: Agent; id: string; cwd: string; title: string; mode?: string[]; seen: number }
+const same = (a: { agent: Agent; id: string }, b: { agent: Agent; id: string }) => a.agent === b.agent && a.id === b.id;
+export function track(list: Recent[], rows: Row[], now = Date.now()): Recent[] {
+  const seen = Math.floor(now / 60_000); // em minutos: o arquivo muda no máximo uma vez por minuto
+  const mine = rows.filter((r) => r.m && r.id).map((r): Recent => ({ agent: r.agent, id: r.id, cwd: r.cwd, title: r.title, mode: r.m!.mode, seen }));
+  return [...mine.filter((n) => !list.some((o) => same(o, n))), ...list.map((o) => mine.find((n) => same(o, n)) ?? o)].slice(0, 20);
+}
+
 // Estado que sobrevive quando o painel sai da tela para você entrar numa sessão.
 const store = {
-  tab: 0, sel: 0, input: '', notice: '', quitArmed: false,
+  tab: 0, sel: 0, input: '', quitArmed: false,
+  history: load(HISTORY) as string[],
+  recent: load(RECENT) as Recent[],
+  notice: fs.existsSync(RECENT) ? 'Ctrl+O retoma as sessões que você tinha aberto pelo Maestro.' : '',
   usage: usage(),
   mode: {} as Partial<Record<Agent, number>>, // último modo escolhido por agente
   focus: undefined as Managed | undefined, // sessão de onde você acabou de voltar
@@ -83,6 +110,8 @@ function App({ onAttach }: { onAttach: (m: Managed) => void }) {
 
   const refresh = () => {
     const list = merge(liveSessions(), managed);
+    const recent = track(store.recent, list);
+    if (JSON.stringify(recent) !== JSON.stringify(store.recent)) save(RECENT, (store.recent = recent));
     const p = store.pending;
     const gone = p && !list.some((r) => r.agent === p.row.agent && r.id === p.row.id);
     if (p) p.misses = gone ? p.misses + 1 : 0;
@@ -114,6 +143,11 @@ function App({ onAttach }: { onAttach: (m: Managed) => void }) {
   store.sel = Math.min(store.sel, Math.max(0, shown.length - 1));
   const selected = shown[store.sel];
 
+  // Fechadas = não estão vivas agora. "Da última vez" = as que ainda estavam vivas no último minuto registrado.
+  const closed = store.recent.filter((s) => !all.some((r) => same(r, s)));
+  const lastSeen = Math.max(...store.recent.map((s) => s.seen));
+  const lastRun = closed.filter((s) => s.seen >= lastSeen - 1);
+
   const items: Item[] =
     step?.kind === 'agent' ? AGENTS.map((a) => ({ label: LABEL[a], value: a, color: COLOR[a] }))
     : step?.kind === 'target' ? [
@@ -128,6 +162,11 @@ function App({ onAttach }: { onAttach: (m: Managed) => void }) {
         { label: '✎ Outro caminho…', value: 'other', color: 'cyan' },
       ]
     : step?.kind === 'mode' ? MODES[step.agent].map((m, i) => ({ label: m.label, value: i, color: m.label === 'Sem permissões' ? 'red' : undefined }))
+    : step?.kind === 'history' ? store.history.map((p) => ({ label: p, value: p }))
+    : step?.kind === 'recent' ? [
+        ...(lastRun.length > 1 ? [{ label: `↻ Retomar as ${lastRun.length} que estavam abertas da última vez`, value: 'last', color: 'cyan' }] : []),
+        ...closed.map((s) => ({ label: `${LABEL[s.agent].padEnd(12)}${s.title || short(s.cwd)}  ·  ${short(s.cwd)}`, value: s, color: COLOR[s.agent] })),
+      ]
     : [];
 
   const go = (s: Step | undefined) => { setStep(s); setCursor(0); };
@@ -162,10 +201,21 @@ function App({ onAttach }: { onAttach: (m: Managed) => void }) {
     if (step?.kind === 'target') return v === 'new' ? go({ kind: 'dir', agent: step.agent }) : deliver(v, prompt);
     if (step?.kind === 'dir') return v === 'other' ? (setDirText(''), go({ kind: 'path', agent: step.agent })) : create(step.agent, v);
     if (step?.kind === 'mode') return launch(step.agent, step.dir, v);
+    if (step?.kind === 'history') { store.input = v; return go(undefined); }
+    if (step?.kind === 'recent') return resume(v === 'last' ? lastRun : [v]);
+  };
+
+  const resume = (list: Recent[]) => {
+    go(undefined);
+    const opened = list.flatMap((s) => open(s.agent, s.cwd, { resumeId: s.id, mode: s.mode }) ?? []);
+    if (list.length === 1 && opened[0]) return onAttach(opened[0]); // uma só: você quer usá-la agora
+    if (opened.length) note(`Retomei ${opened.length} sessão(ões).`);
+    refresh();
   };
 
   const startDispatch = (text: string) => {
     setPrompt(text);
+    if (text) save(HISTORY, (store.history = remember(store.history, text)));
     if (!tabAgent) {
       setStep({ kind: 'agent' });
       setCursor(Math.max(0, AGENTS.indexOf(selected?.agent ?? 'claude')));
@@ -212,6 +262,16 @@ function App({ onAttach }: { onAttach: (m: Managed) => void }) {
     if (key.upArrow) { store.sel = Math.max(0, store.sel - 1); return redraw(); }
     if (key.downArrow) { store.sel = Math.min(shown.length - 1, store.sel + 1); return redraw(); }
     if (key.ctrl && input === 'n') return startDispatch('');
+    if (key.ctrl && input === 'r') {
+      if (!store.history.length) return note('Nenhum prompt no histórico ainda.');
+      setPrompt('');
+      return go({ kind: 'history' });
+    }
+    if (key.ctrl && input === 'o') {
+      if (!closed.length) return note('Nenhuma sessão fechada para retomar.');
+      setPrompt('');
+      return go({ kind: 'recent' });
+    }
     if (key.return) {
       const t = store.input.trim();
       store.input = '';
@@ -275,6 +335,8 @@ function App({ onAttach }: { onAttach: (m: Managed) => void }) {
       dir: `Em qual diretório abrir ${LABEL[(step as any).agent as Agent]}?`,
       path: 'Caminho do diretório:',
       mode: `Em qual modo abrir ${LABEL[(step as any).agent as Agent]}?`,
+      history: 'Qual prompt reaproveitar?',
+      recent: 'Qual sessão retomar?',
     }[step.kind]),
     step.kind === 'path'
       ? h(Text, null, h(Text, { color: 'cyan' }, '› '), dirText, h(Text, { inverse: true }, ' '))
@@ -309,7 +371,7 @@ function App({ onAttach }: { onAttach: (m: Managed) => void }) {
 
   const hints = step
     ? '↑↓ escolher · Enter confirmar · Esc cancelar'
-    : 'Tab abas · ↑↓ sessão · Enter entrar/enviar · Ctrl+Q/F12 volta da sessão · Ctrl+N nova sessão · Esc limpar · Ctrl+C sair   ◆ Maestro ◇ externa';
+    : 'Tab abas · ↑↓ sessão · Enter entrar/enviar · Ctrl+Q/F12 volta da sessão · Ctrl+N nova sessão · Ctrl+R histórico · Ctrl+O retomar · Esc limpar · Ctrl+C sair   ◆ Maestro ◇ externa';
 
   return h(Box, { flexDirection: 'column', height },
     header, usageLine, body, detail,

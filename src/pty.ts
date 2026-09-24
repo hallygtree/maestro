@@ -8,8 +8,8 @@ import pty from 'node-pty';
 import type { IPty } from 'node-pty';
 import type { Agent } from './disk.ts';
 
-// preexisting: sessões já vivas quando esta foi aberta (não podem ser confundidas com ela).
-export interface Managed { agent: Agent; cwd: string; id?: string; title: string; proc: IPty; preexisting?: Set<string> }
+// preexisting: sessões já vivas quando esta foi aberta (não podem ser confundidas com ela). mode: flags de modo, para retomar igual.
+export interface Managed { agent: Agent; cwd: string; id?: string; title: string; proc: IPty; preexisting?: Set<string>; mode?: string[] }
 export const managed: Managed[] = [];
 let detachCurrent: (() => void) | undefined;
 let attached: Managed | undefined;
@@ -92,7 +92,7 @@ export function spawn(agent: Agent, cwd: string, opts: { resumeId?: string; prom
     name: 'xterm-256color', cwd, env: childEnv(),
     cols: process.stdout.columns || 120, rows: process.stdout.rows || 30,
   });
-  const m: Managed = { agent, cwd, id, title: '', proc };
+  const m: Managed = { agent, cwd, id, title: '', proc, mode: opts.mode };
   proc.onData((d) => {
     const t = [...d.matchAll(/\x1b\][02];([^\x07\x1b]*)/g)].at(-1)?.[1];
     // ignora o título inicial do ConPTY (caminho do .exe) e tira o spinner que alguns agentes põem na frente

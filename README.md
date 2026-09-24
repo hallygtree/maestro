@@ -112,6 +112,8 @@ interactive TTY and exits with a message otherwise.
 | `Enter` with an empty prompt | Enter the selected `◆` session full screen. On a `◇` session, resume it here once you close it ([why](#sessions-opened-elsewhere)) |
 | `Ctrl+Q` or `F12` | Leave a session and go back to the dashboard. Use F12 in the VS Code terminal, which keeps Ctrl+Q for itself |
 | `Ctrl+N` | Start a new, empty session: pick the tool, the directory, then the mode |
+| `Ctrl+R` | Pick one of your last 50 prompts and put it back in the prompt box, to send it again (say, after picking the wrong directory). Kept in `~/.maestro/history.json` |
+| `Ctrl+O` | Resume a session Maestro opened before, in the same mode, for example after closing Maestro. One option resumes all the sessions that were open when it closed. Kept in `~/.maestro/sessions.json` (last 20) |
 | `Esc` | Clear the prompt, close a picker, or cancel a pending resume |
 | `Ctrl+C` | Quit. Asks again first if it would close sessions Maestro opened |
 

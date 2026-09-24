@@ -2,7 +2,27 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { agyLimits, claudeLimits, codexLimits, codexStatus, type Session } from './disk.ts';
 import { MODES, args, isDetachKey, shimTarget, type Managed } from './pty.ts';
-import { merge } from './ui.ts';
+import { merge, remember, track, type Recent, type Row } from './ui.ts';
+
+test('sessões recentes: novas na frente, vivas atualizadas no lugar, externas e sem id de fora', () => {
+  const m = { mode: ['-s', 'read-only'] } as Managed;
+  const row = (id: string, o: Partial<Row> = {}): Row => ({ agent: 'codex', id, cwd: 'C:\\p', title: id, status: 'idle', m, ...o });
+  const old: Recent = { agent: 'codex', id: 'a', cwd: 'C:\\p', title: 'velho', seen: 1 };
+  const out = track([old], [row('a', { title: 'novo' }), row('b'), row('c', { m: undefined }), row('')], 120_000);
+  assert.deepEqual(out.map((s) => s.id), ['b', 'a']);
+  assert.equal(out[1].title, 'novo');
+  assert.equal(out[1].seen, 2); // minutos
+  assert.deepEqual(out[0].mode, ['-s', 'read-only']);
+  assert.deepEqual(track(out, [], 999_999_999), out); // fechadas continuam lá, intactas
+});
+
+test('histórico de prompts: mais recente primeiro, sem repetir, no máximo 50', () => {
+  assert.deepEqual(remember(['b', 'a'], 'c'), ['c', 'b', 'a']);
+  assert.deepEqual(remember(['b', 'a'], 'a'), ['a', 'b']);
+  const cheio = Array.from({ length: 50 }, (_, i) => String(i));
+  assert.equal(remember(cheio, 'novo').length, 50);
+  assert.equal(remember(cheio, 'novo').at(-1), '48');
+});
 
 test('status do Codex vem do último evento de turno', () => {
   const now = 1_000_000;
