@@ -1,6 +1,6 @@
 {
   "name": "maestro",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A terminal dashboard that pulls the strings of your Claude Code, Codex CLI and Antigravity sessions: see their status and send prompts from one place",
   "license": "MIT",
   "repository": "github:hallygtree/maestro",

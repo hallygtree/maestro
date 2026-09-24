@@ -12,7 +12,7 @@ the agents' settings, no network calls beyond the update check. Sessions you ope
 inside it, so it can also type into them and let you jump in and out.
 
 > [!NOTE]
-> Maestro is an early prototype (`v0.2.0`). It is used daily on Windows; Linux
+> Maestro is an early prototype (`v0.3.0`). It is used daily on Windows; Linux
 > and macOS builds pass the tests but are new (see [Limitations](#limitations)).
 
 ## Contents
