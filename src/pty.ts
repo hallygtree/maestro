@@ -91,6 +91,7 @@ export function spawn(agent: Agent, cwd: string, opts: { resumeId?: string; prom
   const proc = pty.spawn(file, [...pre, ...a], {
     name: 'xterm-256color', cwd, env: childEnv(),
     cols: process.stdout.columns || 120, rows: process.stdout.rows || 30,
+    useConptyDll: true, // ConPTY do node-pty (repassa a saída); o do Windows redesenha e deixa lixo ao rolar
   });
   const m: Managed = { agent, cwd, id, title: '', proc, mode: opts.mode };
   proc.onData((d) => {
