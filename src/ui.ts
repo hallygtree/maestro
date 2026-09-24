@@ -106,7 +106,8 @@ function App({ onAttach }: { onAttach: (m: Managed) => void }) {
         { label: '＋ Nova sessão…', value: 'new', color: 'cyan' },
       ]
     : step?.kind === 'dir' ? [
-        ...knownDirs().map((d) => ({ label: short(d), value: d })),
+        { label: `${short(process.cwd())}  · onde você abriu o Maestro`, value: process.cwd() },
+        ...knownDirs().filter((d) => !samePath(d, process.cwd())).map((d) => ({ label: short(d), value: d })),
         { label: '✎ Outro caminho…', value: 'other', color: 'cyan' },
       ]
     : [];

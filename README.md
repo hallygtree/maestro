@@ -63,8 +63,13 @@ x64 and arm64, so no C++ build tools are needed.
 git clone https://github.com/hallygtree/maestro.git
 cd maestro
 npm install
-npm start
+npm link      # puts a `maestro` command on your PATH
+
+maestro       # from any folder, in cmd or PowerShell
 ```
+
+`npm link` points the global command at this folder, so a `git pull` is all an
+update takes. To remove the command, run `npm unlink -g maestro`.
 
 Run it in a real terminal (Windows Terminal, the VS Code terminal). It needs an
 interactive TTY and exits with a message otherwise.
@@ -114,9 +119,9 @@ The list refreshes every 1.5 seconds.
 2. **Pick the tool.** On a tool's tab this step is skipped.
 3. **Pick the session.** Maestro lists that tool's open sessions with their
    directories, the ones it opened first, then **＋ Nova sessão…** (new session).
-4. For a new session, **pick the directory.** The list holds every folder where
-   Claude Code, Codex or Antigravity has already run, plus **✎ Outro caminho…**
-   (another path) to type one.
+4. For a new session, **pick the directory.** The folder you started Maestro
+   from comes first, then every folder where Claude Code, Codex or Antigravity
+   has already run, then **✎ Outro caminho…** (another path) to type one.
 
 What happens next depends on the session:
 
@@ -223,7 +228,7 @@ Antigravity CLI 1.2.10.
 
 ```powershell
 npm test     # node:test, no extra dependencies
-npm start
+npm start    # runs this checkout without the global command
 ```
 
 ```text
