@@ -1,0 +1,23 @@
+{
+  "name": "maestro",
+  "version": "0.1.0",
+  "description": "A terminal dashboard for your Claude Code, Codex CLI and Antigravity sessions: see their status and send prompts from one place",
+  "license": "MIT",
+  "repository": "github:hallygtree/maestro",
+  "type": "module",
+  "bin": {
+    "maestro": "src/cli.ts"
+  },
+  "scripts": {
+    "start": "node src/cli.ts",
+    "test": "node --test \"src/*.test.ts\""
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "ink": "^7.1.1",
+    "node-pty": "^1.1.0",
+    "react": "^19.3.0"
+  }
+}
