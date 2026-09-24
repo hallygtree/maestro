@@ -24,6 +24,7 @@ inside it, so it can also type into them and let you jump in and out.
 - [Using Maestro](#using-maestro)
 - [Sending a prompt](#sending-a-prompt)
 - [Sessions opened elsewhere](#sessions-opened-elsewhere)
+- [Plan usage](#plan-usage)
 - [How each tool is read](#how-each-tool-is-read)
 - [Privacy](#privacy)
 - [Limitations](#limitations)
@@ -39,6 +40,8 @@ inside it, so it can also type into them and let you jump in and out.
 - **One prompt box for all of them.** Write a prompt, pick the tool, then pick
   one of its open sessions (grouped by directory) or start a new one in any
   folder.
+- **Plan usage per tool.** The 5-hour and weekly limits of each plan, with
+  reset times, on each tool's tab.
 - **Jump in and out.** Enter opens a session full screen; Ctrl+Q or F12 brings
   you back to the dashboard.
 - **Nothing to install in the agents.** Sessions you started in other
@@ -78,6 +81,7 @@ interactive TTY and exits with a message otherwise.
 
 ```text
  ♪ Maestro  Todos 4  Claude 2  Codex 1  Antigravity 1              1 rodando · 1 esperando você
+ Claude 5h 43%  ·  7d 12%   Codex 5h 67%  ·  7d 31%   Antigravity 5h 14%  ·  7d 45%
 ╭──────────────────────────────────────────────────────────────────────────────────────────────╮
 │ ❯ ● Claude      refactor-auth-middleware     ~\code\api            claude-opus-5-5         ◆ │
 │   ◐ Claude      fix-flaky-tests              ~\code\web            claude-opus-5-5         ◇ │
@@ -161,6 +165,30 @@ Maestro starts and resumes each tool with its own flags:
 | Codex CLI | `codex [prompt]` | `codex resume <id> [prompt]` |
 | Antigravity | `agy [-i prompt]` | `agy --conversation <id> [-i prompt]` |
 
+## Plan usage
+
+The line under the tabs shows how much of each plan you have used. The *Todos*
+tab has the percentages for all three tools; a tool's tab adds a bar and the
+reset time:
+
+```text
+ 5h 67% ▓▓▓▓▓▓▓░░░ reseta 14:05  ·  7d 31% ▓▓▓░░░░░░░ reseta ter 09:42
+```
+
+Green is below 50%, yellow 50% to 79%, red 80% or more. A window whose reset
+time has passed shows `0%`. The numbers are re-read every 30 seconds.
+
+These are the real percentages each provider reports, not estimates. Maestro
+reads them from the same places as [Trayce](https://github.com/hallygtree/trayce):
+
+| Tool | Where the numbers come from | Needs Trayce |
+|------|-----------------------------|--------------|
+| **Codex CLI** | the `rate_limits` snapshot Codex writes to its rollout logs on every turn | no |
+| **Claude Code** | `%APPDATA%\trayce\claude_rate_limits.json`, which Trayce saves from Claude Code's status line (`trayce --setup-claude`) | yes |
+| **Antigravity** | `%APPDATA%\trayce\antigravity_quota.json`, which Trayce saves while the Antigravity desktop app is open | yes |
+
+Without that data, the tab says what to do instead of showing a number.
+
 ## How each tool is read
 
 ### Claude Code
@@ -223,6 +251,9 @@ trusted workspaces in the Antigravity CLI settings.
 - **Two new sessions, same folder.** A new Codex or Antigravity session gets its
   ID only after its first turn, and until then it is matched by folder. Two new
   sessions of the same tool in the same folder can swap places.
+- **Plan usage.** Claude and Antigravity usage needs Trayce. The numbers are as
+  fresh as the tool's last reply (Claude, Codex) or the last time the
+  Antigravity desktop app was open.
 - **Undocumented formats.** Every file Maestro reads is internal to its tool
   and may change in a future release.
 - **Not yet tested:** resuming an Antigravity conversation with `--conversation`
@@ -242,9 +273,9 @@ npm start    # runs this checkout without the global command
 src/
   cli.ts            entry point
   ui.ts             dashboard, tabs and prompt routing (Ink)
-  disk.ts           finds live sessions from each tool's own files
+  disk.ts           finds live sessions and plan usage from each tool's own files
   pty.ts            sessions Maestro opens (node-pty / ConPTY), enter and leave
-  maestro.test.ts   tests for status, keys, launchers and session matching
+  maestro.test.ts   tests for status, keys, launchers, session matching and usage
 ```
 
 Built with [Ink](https://github.com/vadimdemedes/ink) and
