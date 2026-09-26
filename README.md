@@ -3,7 +3,7 @@
 [![License](https://img.shields.io/github/license/hallygtree/maestro)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-0078D4)](#limitations)
 
-**Maestro pulls the strings of every Claude Code, Codex CLI and Antigravity
+**Maestro pulls the strings of every AI agent
 session you have open: it shows each one's status and lets you send a prompt
 to any of them from one place.**
 
